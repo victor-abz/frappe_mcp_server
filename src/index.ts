@@ -24,7 +24,8 @@ import {
 } from "./frappe-helpers.js";
 
 // Setup logging to file
-const logFile = fs.createWriteStream('/workspace/development/frappe-mcp-server/frappe-mcp-server.log', { flags: 'a' });
+const logPath = process.env.FRAPPE_MCP_LOG_PATH || './frappe-mcp-server.log';
+const logFile = fs.createWriteStream(logPath, { flags: 'a' });
 const originalConsoleError = console.error;
 console.error = function (...args: any[]) {
     const timestamp = new Date().toISOString();
