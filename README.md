@@ -64,13 +64,13 @@ To get API credentials from your Frappe instance:
 ### Starting the Server
 
 ```bash
-npm start
+npx frappe-mcp-server
 ```
 
 Or with environment variables:
 
 ```bash
-FRAPPE_URL=https://your-frappe-instance.com FRAPPE_API_KEY=your_api_key FRAPPE_API_SECRET=your_api_secret npm start
+FRAPPE_URL=https://your-frappe-instance.com FRAPPE_API_KEY=your_api_key FRAPPE_API_SECRET=your_api_secret npx frappe-mcp-server
 ```
 
 ### Integrating with AI Assistants
@@ -83,8 +83,8 @@ For Claude, add the following to your MCP settings configuration file:
 {
   "mcpServers": {
     "frappe": {
-      "command": "node",
-      "args": ["build/index.js"], // Assumes frappe-mcp-server is in MCP server path
+      "command": "npx",
+      "args": ["frappe-mcp-server"], // Assumes frappe-mcp-server is in MCP server path
       "env": {
         "FRAPPE_URL": "https://your-frappe-instance.com",
         "FRAPPE_API_KEY": "your_api_key",
