@@ -23,16 +23,21 @@ import {
   getRequiredFields
 } from "./frappe-helpers.js";
 
-// Setup logging to file
-const logPath = process.env.FRAPPE_MCP_LOG_PATH || './frappe-mcp-server.log';
-const logFile = fs.createWriteStream(logPath, { flags: 'a' });
-const originalConsoleError = console.error;
-console.error = function (...args: any[]) {
-    const timestamp = new Date().toISOString();
-    const logEntry = `[${timestamp}] [ERROR] ${args.join(' ')}\n`;
-    logFile.write(logEntry);
-    originalConsoleError(...args); // Still output to original console.error
-};
+// Setup logging to file conditionally
+if (process.env.FRAPPE_MCP_LOG_PATH) {
+    const logPath = process.env.FRAPPE_MCP_LOG_PATH;
+    const logFile = fs.createWriteStream(logPath, { flags: 'a' });
+    const originalConsoleError = console.error;
+    console.error = function (...args: any[]) {
+        const timestamp = new Date().toISOString();
+        const logEntry = `[${timestamp}] [ERROR] ${args.join(' ')}\n`;
+        logFile.write(logEntry);
+        originalConsoleError(...args); // Still output to original console.error
+    };
+    console.error(`Logging to file: ${logPath}`);
+} else {
+    console.error("Logging to console only (optional file logging disabled as FRAPPE_MCP_LOG_PATH is not set)");
+}
 
 
 // Define new tool handlers
