@@ -11,7 +11,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "test-server": "node test-server.js",
     "test-tools": "node test-tools.js",
-    "publish": "npm version patch && npm publish --access public",
+    "publish": "npm publish --access public",
     "fixpkg": "npm pkg fix"
   },
   "bin": {
