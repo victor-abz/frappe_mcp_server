@@ -25,7 +25,7 @@ import {
 
 // Setup logging to file conditionally
 if (process.env.FRAPPE_MCP_LOG_PATH) {
-    const logPath = process.env.FRAPPE_MCP_LOG_PATH;
+    const logPath = process.env.FRAPPE_MCP_LOG_PATH || './tmp/frappe-mcp-server.log';
     const logFile = fs.createWriteStream(logPath, { flags: 'a' });
     const originalConsoleError = console.error;
     console.error = function (...args: any[]) {
@@ -184,7 +184,7 @@ async function main() {
   const server = new Server(
     {
       name: "frappe-mcp-server",
-      version: "0.2.0", // Updated version
+      version: "0.2.13", // Updated version
     },
     {
       capabilities: {
