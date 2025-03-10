@@ -52,7 +52,7 @@ server.on('exit', (code) => {
 console.log('Frappe MCP Server Test Client');
 console.log('----------------------------');
 console.log('Enter JSON requests to send to the server.');
-console.log('Example: { "method": "tools/list" }');
+console.log('Example: { "jsonrpc": "2.0", "id": "1", "method": "tools/list", "params": {} }');
 console.log('Type "exit" to quit.');
 console.log('');
 
@@ -69,8 +69,15 @@ rl.on('line', (line) => {
   }
   
   try {
-    // Parse and send the JSON request
-    const request = JSON.parse(input);
+    // Parse the JSON request from input
+    const userRequest = JSON.parse(input);
+    // Construct a JSON-RPC 2.0 request
+    const request = {
+      jsonrpc: "2.0",
+      id: String(Date.now()), // Use timestamp as request ID
+      method: userRequest.method, // Extract method from user input
+      params: userRequest.params || {} // Extract params or default to empty object
+    };
     server.stdin.write(JSON.stringify(request) + '\n');
   } catch (error) {
     console.error('Error parsing input:', error.message);
