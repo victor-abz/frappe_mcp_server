@@ -9,7 +9,8 @@ import { setupSchemaTools, handleSchemaToolCall } from "./schema-operations.js";
 import { getInstructions } from "./frappe-instructions.js";
 import { findDocTypes, getModuleList, getDocTypesInModule, doesDocTypeExist, doesDocumentExist, getDocumentCount, getNamingSeriesInfo, getRequiredFields } from "./frappe-helpers.js";
 // Setup logging to file
-const logFile = fs.createWriteStream('/workspace/development/frappe-mcp-server/frappe-mcp-server.log', { flags: 'a' });
+const logPath = process.env.FRAPPE_MCP_LOG_PATH || './frappe-mcp-server.log';
+const logFile = fs.createWriteStream(logPath, { flags: 'a' });
 const originalConsoleError = console.error;
 console.error = function (...args) {
     const timestamp = new Date().toISOString();
