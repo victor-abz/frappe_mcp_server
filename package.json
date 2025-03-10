@@ -1,6 +1,6 @@
 {
   "name": "frappe-mcp-server",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "description": "Enhanced Model Context Protocol server for Frappe Framework with comprehensive API instructions and helper tools",
   "main": "build/index.js",
   "type": "module",
