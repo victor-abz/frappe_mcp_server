@@ -11,7 +11,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "test-server": "node test-server.js",
     "test-tools": "node test-tools.js",
-    "fixpkg": "npm pkg fix"
+    "fixpkg": "npm pkg fix",
+    "publish": "npm publish --access public"
   },
   "bin": {
     "frappe-mcp-server": "build/index.js"
