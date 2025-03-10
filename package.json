@@ -12,6 +12,9 @@
     "test-server": "node test-server.js",
     "test-tools": "node test-tools.js"
   },
+  "bin": {
+    "frappe-mcp-server": "build/index.js"
+  },
   "keywords": ["frappe", "mcp", "ai", "claude", "anthropic", "erp"],
   "author": "",
   "license": "ISC",
@@ -29,6 +32,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/frappe-mcp-server.git"
+    "url": "https://github.com/appliedrelevance/frappe_mcp_server.git"
   }
 }

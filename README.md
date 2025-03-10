@@ -18,7 +18,7 @@ The server includes comprehensive error handling, validation, and helpful respon
 ### Prerequisites
 
 - Node.js 18 or higher
-- A running Frappe instance (version 13 or higher)
+- A running Frappe instance (version 15 or higher)
 - API key and secret from Frappe (optional but recommended)
 
 ### Setup
@@ -26,8 +26,8 @@ The server includes comprehensive error handling, validation, and helpful respon
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/frappe-mcp-server.git
-cd frappe-mcp-server
+git clone https://github.com/appliedrelevance/frappe_mcp_server.git
+cd frappe_mcp-server
 ```
 
 2. Install dependencies:
@@ -84,7 +84,7 @@ For Claude, add the following to your MCP settings configuration file:
   "mcpServers": {
     "frappe": {
       "command": "node",
-      "args": ["/path/to/frappe-mcp-server/build/index.js"],
+      "args": ["build/index.js"], // Assumes frappe-mcp-server is in MCP server path
       "env": {
         "FRAPPE_URL": "https://your-frappe-instance.com",
         "FRAPPE_API_KEY": "your_api_key",

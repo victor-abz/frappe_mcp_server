@@ -31995,3 +31995,12 @@
 [2025-03-10T04:50:53.612Z] [ERROR] Handling document tool: update_document with args: [object Object]
 [2025-03-10T04:50:53.614Z] [ERROR] [API Request] PUT /api/resource/Venture/CarbonEra
 [2025-03-10T04:50:53.770Z] [ERROR] [API Response] 200 /api/resource/Venture/CarbonEra
+[2025-03-10T05:14:10.140Z] [ERROR] Starting Frappe MCP server...
+[2025-03-10T05:14:10.142Z] [ERROR] Current working directory: /vscode/vscode-server/bin/linux-arm64/e54c774e0add60467559eb0d1e229c6452cf8447
+[2025-03-10T05:14:10.142Z] [ERROR] Setting up authentication with provided API key and secret
+[2025-03-10T05:14:10.143Z] [ERROR] Frappe MCP server running on stdio
+[2025-03-10T05:14:28.464Z] [ERROR] Starting Frappe MCP server...
+[2025-03-10T05:14:28.465Z] [ERROR] Current working directory: /workspace/development
+[2025-03-10T05:14:28.465Z] [ERROR] Warning: No API key and secret provided. Some operations may fail.
+[2025-03-10T05:14:28.466Z] [ERROR] Frappe MCP server running on stdio
+[2025-03-10T05:19:53.963Z] [ERROR] Shutting down Frappe MCP server...
