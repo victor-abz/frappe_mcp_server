@@ -23,24 +23,24 @@ The server includes comprehensive error handling, validation, and helpful respon
 
 ### Setup
 
-1. Clone the repository:
+1. Install via npm:
 
 ```bash
-git clone https://github.com/appliedrelevance/frappe_mcp_server.git
-cd frappe_mcp-server
+npm install -g frappe-mcp-server
 ```
 
-2. Install dependencies:
+
+Alternatively, run directly with npx:
 
 ```bash
-npm install
+npx frappe-mcp-server
 ```
 
-3. Build the project:
+(no installation needed)
 
-```bash
-npm run build
-```
+
+
+
 
 ## Configuration
 
