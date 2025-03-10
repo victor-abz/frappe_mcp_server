@@ -1,5 +1,4 @@
 import axios from "axios";
-import { formatFilters } from "./frappe-helpers.js";
 /**
  * Error class for Frappe API errors
  */
@@ -54,10 +53,13 @@ export class FrappeApiError extends Error {
     }
 }
 // Configure axios instance
+const apiKey = process.env.FRAPPE_API_KEY;
+const apiSecret = process.env.FRAPPE_API_SECRET;
 const api = axios.create({
     baseURL: process.env.FRAPPE_URL || "http://localhost:8000",
     headers: {
         "Content-Type": "application/json",
+        "Authorization": `token ${apiKey}:${apiSecret}` // Directly set authorization header
     },
     // Add timeout to prevent hanging requests
     timeout: 30000, // 30 seconds
@@ -83,11 +85,11 @@ api.interceptors.response.use((response) => {
     }
     return Promise.reject(error);
 });
-// Set authentication
-export function setAuth(apiKey, apiSecret) {
-    api.defaults.headers.common["Authorization"] = `token ${apiKey}:${apiSecret}`;
-    console.error("Authentication credentials set");
-}
+// Set authentication - No longer needed as auth is set directly
+// export function setAuth(apiKey: string, apiSecret: string): void {
+//   api.defaults.headers.common["Authorization"] = `token ${apiKey}:${apiSecret}`;
+//   console.error("Authentication credentials set");
+// }
 /**
  * Helper function to handle API errors
  */
@@ -226,165 +228,27 @@ export async function getDocTypeSchema(doctype) {
     try {
         if (!doctype)
             throw new Error("DocType name is required");
-        // Primary approach: Get the DocType document directly using the document API
-        try {
-            console.error(`Using document API to get schema for ${doctype}`);
-            // 1. Get the DocType document
-            console.error(`Fetching DocType document for ${doctype}`);
-            const doctypeDoc = await getDocument("DocType", doctype);
-            console.error(`DocType document response:`, JSON.stringify(doctypeDoc).substring(0, 200) + "...");
-            if (!doctypeDoc) {
-                throw new Error(`DocType ${doctype} not found`);
-            }
-            // Check if the DocType document has a fields array
-            console.error(`Checking if DocType document has fields array:`, `doctypeDoc=${!!doctypeDoc}`, `doctypeDoc.fields=${!!doctypeDoc?.fields}`, `Array.isArray=${Array.isArray(doctypeDoc?.fields)}`);
-            if (doctypeDoc && doctypeDoc.fields && Array.isArray(doctypeDoc.fields)) {
-                console.error(`Using fields array from DocType document for ${doctype}, found ${doctypeDoc.fields.length} fields`);
-                // 3. Get the DocPerm records for this DocType
-                const formattedPermFilters = formatFilters({ parent: doctype });
-                doctypeDoc.permissions = await listDocuments("DocPerm", formattedPermFilters, undefined, 100);
-            }
-            else {
-                // Fallback to getting fields separately if not included in the DocType document
-                console.error(`DocType document for ${doctype} does not have a fields array, fetching fields separately`);
-                const fieldFilters = { parent: doctype };
-                console.error(`Field filters before formatting:`, fieldFilters);
-                const formattedFieldFilters = formatFilters(fieldFilters);
-                console.error(`Field filters after formatting:`, formattedFieldFilters);
-                let docFields;
-                try {
-                    console.error(`Attempting to list DocField documents with parent=${doctype}`);
-                    docFields = await listDocuments("DocField", fieldFilters, [
-                        "fieldname", "label", "fieldtype", "reqd", "description",
-                        "default", "options", "in_list_view", "in_standard_filter",
-                        "hidden", "read_only", "bold", "allow_on_submit", "translatable",
-                        "set_only_once", "allow_bulk_edit", "in_global_search",
-                        "min_length", "max_length", "min_value", "max_value"
-                    ], 500);
-                    console.error(`Retrieved ${docFields.length} fields for ${doctype} using document API`);
-                    doctypeDoc.fields = docFields;
-                }
-                catch (error) {
-                    console.error(`Error retrieving DocField records for ${doctype}:`, error);
-                    console.error(`Stack trace:`, error.stack);
-                    throw error;
-                }
-                // 3. Get the DocPerm records for this DocType
-                const formattedPermFilters = formatFilters({ parent: doctype });
-                doctypeDoc.permissions = await listDocuments("DocPerm", formattedPermFilters, undefined, 100);
-            }
-            // 4. Construct the schema object
-            return {
-                name: doctype,
-                label: doctypeDoc.name || doctype,
-                description: doctypeDoc.description,
-                module: doctypeDoc.module,
-                issingle: doctypeDoc.issingle === 1,
-                istable: doctypeDoc.istable === 1,
-                custom: doctypeDoc.custom === 1,
-                fields: doctypeDoc.fields.map((field) => ({
-                    fieldname: field.fieldname,
-                    label: field.label,
-                    fieldtype: field.fieldtype,
-                    required: field.reqd === 1,
-                    description: field.description,
-                    default: field.default,
-                    options: field.options,
-                    // Include validation information
-                    min_length: field.min_length,
-                    max_length: field.max_length,
-                    min_value: field.min_value,
-                    max_value: field.max_value,
-                    // Include linked DocType information if applicable
-                    linked_doctype: field.fieldtype === "Link" ? field.options : null,
-                    // Include child table information if applicable
-                    child_doctype: field.fieldtype === "Table" ? field.options : null,
-                    // Include additional field metadata
-                    in_list_view: field.in_list_view === 1,
-                    in_standard_filter: field.in_standard_filter === 1,
-                    in_global_search: field.in_global_search === 1,
-                    bold: field.bold === 1,
-                    hidden: field.hidden === 1,
-                    read_only: field.read_only === 1,
-                    allow_on_submit: field.allow_on_submit === 1,
-                    set_only_once: field.set_only_once === 1,
-                    allow_bulk_edit: field.allow_bulk_edit === 1,
-                    translatable: field.translatable === 1,
-                })),
-                // Include permissions information
-                permissions: doctypeDoc.permissions || [],
-                // Include naming information
-                autoname: doctypeDoc.autoname,
-                name_case: doctypeDoc.name_case,
-                // Include workflow information if available
-                workflow: null, // We don't have workflow info in this approach
-                // Include additional metadata
-                is_submittable: doctypeDoc.is_submittable === 1,
-                quick_entry: doctypeDoc.quick_entry === 1,
-                track_changes: doctypeDoc.track_changes === 1,
-                track_views: doctypeDoc.track_views === 1,
-                has_web_view: doctypeDoc.has_web_view === 1,
-                allow_rename: doctypeDoc.allow_rename === 1,
-                allow_copy: doctypeDoc.allow_copy === 1,
-                allow_import: doctypeDoc.allow_import === 1,
-                allow_events_in_timeline: doctypeDoc.allow_events_in_timeline === 1,
-                allow_auto_repeat: doctypeDoc.allow_auto_repeat === 1,
-                document_type: doctypeDoc.document_type,
-                icon: doctypeDoc.icon,
-                max_attachments: doctypeDoc.max_attachments,
-            };
-        }
-        catch (error) {
-            console.error(`Error using document API for ${doctype}:`, error);
-            // Fall back to the standard API endpoint
-        }
-        // Fallback: Try the standard API endpoint
-        console.error(`Falling back to standard API endpoint for ${doctype}`);
+        // Primary approach: Use the standard API endpoint
+        console.error(`Using standard API endpoint for ${doctype}`);
         let response;
         try {
-            response = await api.get(`/api/method/frappe.desk.form.load.getdoctype?doctype=${encodeURIComponent(doctype)}`);
+            response = await api.get(`/api/v2/doctype/${encodeURIComponent(doctype)}/meta`, {
+                headers: {
+                    'Cache-Control': 'no-cache'
+                }
+            });
             console.error(`Got response from standard API endpoint for ${doctype}`);
+            console.error(`Raw response data:`, JSON.stringify(response?.data, null, 2)); // Log raw response data
         }
         catch (error) {
             console.error(`Error using standard API endpoint for ${doctype}:`, error);
-            throw new Error(`Could not retrieve schema for DocType ${doctype} using any available method`);
+            // Fallback to document API
         }
-        // Handle different response formats
-        let docTypeData;
-        if (response.data.message) {
-            // Standard format from frappe.desk.form.load.getdoctype
-            docTypeData = response.data.message;
-            console.error(`Using message format for ${doctype}`);
-        }
-        else if (response.data.docs && response.data.docs.length > 0) {
-            // Alternative format with docs array
-            const docTypeDoc = response.data.docs.find((doc) => doc.doctype === "DocType" && doc.name === doctype);
-            if (!docTypeDoc) {
-                throw new Error(`DocType ${doctype} not found in response docs`);
-            }
-            // Extract fields from the docs array
-            const fields = response.data.docs.filter((doc) => doc.doctype === "DocField" &&
-                doc.parent === doctype);
-            // Extract permissions from the docs array
-            const permissions = response.data.docs.filter((doc) => doc.doctype === "DocPerm" &&
-                doc.parent === doctype);
-            // Construct a compatible docTypeData object
-            docTypeData = {
-                doctype: docTypeDoc,
-                fields: fields,
-                permissions: permissions
-            };
-            console.error(`Using docs array format for ${doctype}, found ${fields.length} fields`);
-        }
-        else {
-            throw new Error(`Unrecognized schema response format for DocType ${doctype}`);
-        }
-        if (!docTypeData || (!docTypeData.doctype && !docTypeData.fields)) {
-            throw new Error(`Invalid schema response for DocType ${doctype}`);
-        }
-        // If we have fields, use this response
-        if (docTypeData.fields && docTypeData.fields.length > 0) {
-            // Extract doctype info
+        // Directly use response data from standard API endpoint (/api/v2/doctype/{doctype}/meta)
+        const docTypeData = response?.data?.data; // Access schema data under response.data.data
+        console.error(`Using /api/v2/doctype/{doctype}/meta format`);
+        if (docTypeData) {
+            // If we got schema data from standard API, process and return it
             const doctypeInfo = docTypeData.doctype || {};
             return {
                 name: doctype,
@@ -445,6 +309,52 @@ export async function getDocTypeSchema(doctype) {
                 icon: doctypeInfo.icon,
                 max_attachments: doctypeInfo.max_attachments,
             };
+        }
+        // Fallback to Document API if standard API failed or didn't return schema data
+        console.error(`Falling back to document API for ${doctype}`);
+        try {
+            console.error(`Using document API to get schema for ${doctype}`);
+            // 1. Get the DocType document
+            console.error(`Fetching DocType document for ${doctype}`);
+            const doctypeDoc = await getDocument("DocType", doctype);
+            console.error(`DocType document response:`, JSON.stringify(doctypeDoc).substring(0, 200) + "...");
+            console.error(`Full DocType document response:`, doctypeDoc); // Log full response
+            if (!doctypeDoc) {
+                throw new Error(`DocType ${doctype} not found`);
+            }
+            console.error(`DocTypeDoc.fields before schema construction:`, doctypeDoc.fields); // Log fields
+            console.error(`DocTypeDoc.permissions before schema construction:`, doctypeDoc.permissions); // Log permissions
+            return {
+                name: doctype,
+                label: doctypeDoc.name || doctype,
+                description: doctypeDoc.description,
+                module: doctypeDoc.module,
+                issingle: doctypeDoc.issingle === 1,
+                istable: doctypeDoc.istable === 1,
+                custom: doctypeDoc.custom === 1,
+                fields: doctypeDoc.fields || [], // Use fields from doctypeDoc if available, otherwise default to empty array
+                permissions: doctypeDoc.permissions || [], // Use permissions from doctypeDoc if available, otherwise default to empty array
+                autoname: doctypeDoc.autoname,
+                name_case: doctypeDoc.name_case,
+                workflow: null,
+                is_submittable: doctypeDoc.is_submittable === 1,
+                quick_entry: doctypeDoc.quick_entry === 1,
+                track_changes: doctypeDoc.track_changes === 1,
+                track_views: doctypeDoc.track_views === 1,
+                has_web_view: doctypeDoc.has_web_view === 1,
+                allow_rename: doctypeDoc.allow_rename === 1,
+                allow_copy: doctypeDoc.allow_copy === 1,
+                allow_import: doctypeDoc.allow_import === 1,
+                allow_events_in_timeline: doctypeDoc.allow_events_in_timeline === 1,
+                allow_auto_repeat: doctypeDoc.allow_auto_repeat === 1,
+                document_type: doctypeDoc.document_type,
+                icon: doctypeDoc.icon,
+                max_attachments: doctypeDoc.max_attachments,
+            };
+        }
+        catch (error) {
+            console.error(`Error using document API for ${doctype}:`, error);
+            // If document API also fails, then we cannot retrieve the schema
         }
         throw new Error(`Could not retrieve schema for DocType ${doctype} using any available method`);
     }

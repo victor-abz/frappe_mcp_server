@@ -1,12 +1,22 @@
 #!/usr/bin/env node
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import * as fs from 'fs';
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { handleDocumentToolCall } from "./document-operations.js";
 import { setupSchemaTools, handleSchemaToolCall } from "./schema-operations.js";
-import { setAuth } from "./frappe-api.js";
+// import { setAuth } from "./frappe-api.js"; // Removed setAuth import
 import { getInstructions } from "./frappe-instructions.js";
 import { findDocTypes, getModuleList, getDocTypesInModule, doesDocTypeExist, doesDocumentExist, getDocumentCount, getNamingSeriesInfo, getRequiredFields } from "./frappe-helpers.js";
+// Setup logging to file
+const logFile = fs.createWriteStream('/workspace/development/frappe-mcp-server/frappe-mcp-server.log', { flags: 'a' });
+const originalConsoleError = console.error;
+console.error = function (...args) {
+    const timestamp = new Date().toISOString();
+    const logEntry = `[${timestamp}] [ERROR] ${args.join(' ')}\n`;
+    logFile.write(logEntry);
+    originalConsoleError(...args); // Still output to original console.error
+};
 // Define new tool handlers
 async function handleHelperToolCall(request) {
     const { name, arguments: args } = request.params;
@@ -131,6 +141,8 @@ async function handleHelperToolCall(request) {
 }
 async function main() {
     console.error("Starting Frappe MCP server...");
+    // Log current working directory
+    console.error("Current working directory:", process.cwd());
     // Initialize the MCP server
     const server = new Server({
         name: "frappe-mcp-server",
@@ -146,7 +158,7 @@ async function main() {
     const apiSecret = process.env.FRAPPE_API_SECRET;
     if (apiKey && apiSecret) {
         console.error("Setting up authentication with provided API key and secret");
-        setAuth(apiKey, apiSecret);
+        // setAuth(apiKey, apiSecret); // Removed setAuth call
     }
     else {
         console.error("Warning: No API key and secret provided. Some operations may fail.");

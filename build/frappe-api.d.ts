@@ -9,7 +9,6 @@ export declare class FrappeApiError extends Error {
     constructor(message: string, statusCode?: number, endpoint?: string, details?: any);
     static fromAxiosError(error: AxiosError, operation: string): FrappeApiError;
 }
-export declare function setAuth(apiKey: string, apiSecret: string): void;
 export declare function getDocument(doctype: string, name: string, fields?: string[]): Promise<any>;
 export declare function createDocument(doctype: string, values: Record<string, any>): Promise<any>;
 export declare function updateDocument(doctype: string, name: string, values: Record<string, any>): Promise<any>;
