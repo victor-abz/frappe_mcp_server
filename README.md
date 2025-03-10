@@ -1,6 +1,6 @@
 # Frappe MCP Server
 
-A Model Context Protocol (MCP) server for Frappe Framework that exposes Frappe's functionality to AI assistants through the official REST API, with a focus on document CRUD operations and schema handling.
+A Model Context Protocol (MCP) server for Frappe Framework that exposes Frappe's functionality to AI assistants through the official REST API, with a focus on document CRUD operations, schema handling, and detailed API instructions.
 
 ## Overview
 
@@ -8,13 +8,17 @@ This MCP server allows AI assistants to interact with Frappe applications throug
 
 - Document operations (create, read, update, delete, list)
 - Schema and metadata handling
+- DocType discovery and exploration
+- Detailed API usage instructions and examples
+
+The server includes comprehensive error handling, validation, and helpful responses to make it easier for AI assistants to work with Frappe.
 
 ## Installation
 
 ### Prerequisites
 
 - Node.js 18 or higher
-- A running Frappe instance
+- A running Frappe instance (version 13 or higher)
 - API key and secret from Frappe (optional but recommended)
 
 ### Setup
@@ -45,6 +49,15 @@ The server can be configured using environment variables:
 - `FRAPPE_URL`: The URL of your Frappe instance (default: `http://localhost:8000`)
 - `FRAPPE_API_KEY`: Your Frappe API key
 - `FRAPPE_API_SECRET`: Your Frappe API secret
+
+### Getting API Credentials
+
+To get API credentials from your Frappe instance:
+
+1. Go to User > API Access > New API Key
+2. Select the user for whom you want to create the key
+3. Click "Generate Keys"
+4. Copy the API Key and API Secret
 
 ## Usage
 
@@ -96,8 +109,20 @@ For Claude, add the following to your MCP settings configuration file:
 
 ### Schema Operations
 
-- `get_doctype_schema`: Get the complete schema for a DocType
+- `get_doctype_schema`: Get the complete schema for a DocType including field definitions, validations, and linked DocTypes
 - `get_field_options`: Get available options for a Link or Select field
+
+### Helper Tools
+
+- `find_doctypes`: Find DocTypes in the system matching a search term
+- `get_module_list`: Get a list of all modules in the system
+- `get_doctypes_in_module`: Get a list of DocTypes in a specific module
+- `check_doctype_exists`: Check if a DocType exists in the system
+- `check_document_exists`: Check if a document exists
+- `get_document_count`: Get a count of documents matching filters
+- `get_naming_info`: Get the naming series information for a DocType
+- `get_required_fields`: Get a list of required fields for a DocType
+- `get_api_instructions`: Get detailed instructions for using the Frappe API
 
 ## Available Resources
 
@@ -105,6 +130,8 @@ For Claude, add the following to your MCP settings configuration file:
 
 - `schema://{doctype}`: Schema information for a DocType
 - `schema://{doctype}/{fieldname}/options`: Available options for a Link or Select field
+- `schema://modules`: List of all modules in the system
+- `schema://doctypes`: List of all DocTypes in the system
 
 ## Examples
 
@@ -130,17 +157,84 @@ const result = await useToolWithMcp("frappe", "create_document", {
 const customer = await useToolWithMcp("frappe", "get_document", {
   doctype: "Customer",
   name: "CUST-00001",
+  fields: ["customer_name", "customer_type", "email_id"], // Optional: specific fields
 });
 ```
 
-### Getting DocType Schema
+### Listing Documents with Filters
 
 ```javascript
-// Example of using the get_doctype_schema tool
-const schema = await useToolWithMcp("frappe", "get_doctype_schema", {
+// Example of using the list_documents tool with filters
+const customers = await useToolWithMcp("frappe", "list_documents", {
   doctype: "Customer",
+  filters: {
+    customer_type: "Individual",
+    territory: "United States",
+  },
+  fields: ["name", "customer_name", "email_id"],
+  limit: 10,
+  order_by: "creation desc",
 });
 ```
+
+### Finding DocTypes
+
+```javascript
+// Example of using the find_doctypes tool
+const salesDocTypes = await useToolWithMcp("frappe", "find_doctypes", {
+  search_term: "Sales",
+  module: "Selling",
+  is_table: false,
+});
+```
+
+### Getting Required Fields
+
+```javascript
+// Example of using the get_required_fields tool
+const requiredFields = await useToolWithMcp("frappe", "get_required_fields", {
+  doctype: "Sales Order",
+});
+```
+
+### Getting API Instructions
+
+```javascript
+// Example of using the get_api_instructions tool
+const instructions = await useToolWithMcp("frappe", "get_api_instructions", {
+  category: "DOCUMENT_OPERATIONS",
+  operation: "CREATE",
+});
+```
+
+## Error Handling
+
+The server provides detailed error messages with context to help diagnose issues:
+
+- Missing required parameters
+- Invalid field values
+- Permission errors
+- Network issues
+- Server errors
+
+Each error includes:
+
+- A descriptive message
+- HTTP status code (when applicable)
+- Endpoint information
+- Additional details from the Frappe server
+
+## Best Practices
+
+1. **Check DocType Schema First**: Before creating or updating documents, get the schema to understand required fields and validations.
+
+2. **Use Pagination**: When listing documents, use `limit` and `limit_start` parameters to paginate results.
+
+3. **Specify Fields**: Only request the fields you need to improve performance.
+
+4. **Validate Before Creating**: Use `get_required_fields` to ensure you have all required fields before creating a document.
+
+5. **Check Existence**: Use `check_document_exists` before updating or deleting to ensure the document exists.
 
 ## License
 

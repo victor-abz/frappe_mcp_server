@@ -7,14 +7,56 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { getDocTypeSchema, getFieldOptions } from "./frappe-api.js";
+import {
+  getDocTypeSchema,
+  getFieldOptions,
+  FrappeApiError,
+  getAllDocTypes,
+  getAllModules
+} from "./frappe-api.js";
+import { formatFilters } from "./frappe-helpers.js";
+
+/**
+ * Format error response with detailed information
+ */
+function formatErrorResponse(error: any, operation: string): any {
+  console.error(`Error in ${operation}:`, error);
+  
+  let errorMessage = `Error in ${operation}: ${error.message || 'Unknown error'}`;
+  let errorDetails = null;
+  
+  if (error instanceof FrappeApiError) {
+    errorMessage = error.message;
+    errorDetails = {
+      statusCode: error.statusCode,
+      endpoint: error.endpoint,
+      details: error.details
+    };
+  }
+  
+  return {
+    content: [
+      {
+        type: "text",
+        text: errorMessage,
+      },
+      ...(errorDetails ? [
+        {
+          type: "text",
+          text: `\nDetails: ${JSON.stringify(errorDetails, null, 2)}`,
+        }
+      ] : [])
+    ],
+    isError: true,
+  };
+}
 
 // Export a handler function for schema tool calls
-export function handleSchemaToolCall(request: any): Promise<any> {
+export async function handleSchemaToolCall(request: any): Promise<any> {
   const { name, arguments: args } = request.params;
 
   if (!args) {
-    return Promise.resolve({
+    return {
       content: [
         {
           type: "text",
@@ -22,14 +64,16 @@ export function handleSchemaToolCall(request: any): Promise<any> {
         },
       ],
       isError: true,
-    });
+    };
   }
 
-  if (name === "get_doctype_schema") {
-    try {
+  try {
+    console.error(`Handling schema tool: ${name} with args:`, args);
+
+    if (name === "get_doctype_schema") {
       const doctype = args.doctype as string;
       if (!doctype) {
-        return Promise.resolve({
+        return {
           content: [
             {
               type: "text",
@@ -37,43 +81,52 @@ export function handleSchemaToolCall(request: any): Promise<any> {
             },
           ],
           isError: true,
-        });
+        };
       }
       
-      return getDocTypeSchema(doctype).then(schema => ({
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(schema, null, 2),
-          },
-        ],
-      })).catch(error => ({
-        content: [
-          {
-            type: "text",
-            text: `Error fetching schema: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      }));
-    } catch (error) {
-      return Promise.resolve({
-        content: [
-          {
-            type: "text",
-            text: `Error fetching schema: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      });
-    }
-  } else if (name === "get_field_options") {
-    try {
+      try {
+        const schema = await getDocTypeSchema(doctype);
+        
+        // Add a summary of the schema for easier understanding
+        const fieldTypes = schema.fields.reduce((acc: Record<string, number>, field: any) => {
+          acc[field.fieldtype] = (acc[field.fieldtype] || 0) + 1;
+          return acc;
+        }, {});
+        
+        const requiredFields = schema.fields
+          .filter((field: any) => field.required)
+          .map((field: any) => field.fieldname);
+        
+        const summary = {
+          name: schema.name,
+          module: schema.module,
+          isSingle: schema.issingle,
+          isTable: schema.istable,
+          isCustom: schema.custom,
+          autoname: schema.autoname,
+          fieldCount: schema.fields.length,
+          fieldTypes: fieldTypes,
+          requiredFields: requiredFields,
+          permissions: schema.permissions.length,
+        };
+        
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Schema Summary:\n${JSON.stringify(summary, null, 2)}\n\nFull Schema:\n${JSON.stringify(schema, null, 2)}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, `get_doctype_schema(${doctype})`);
+      }
+    } else if (name === "get_field_options") {
       const doctype = args.doctype as string;
       const fieldname = args.fieldname as string;
       
       if (!doctype || !fieldname) {
-        return Promise.resolve({
+        return {
           content: [
             {
               type: "text",
@@ -81,53 +134,67 @@ export function handleSchemaToolCall(request: any): Promise<any> {
             },
           ],
           isError: true,
-        });
+        };
       }
       
       const filters = args.filters as Record<string, any> | undefined;
+      const formattedFilters = filters ? formatFilters(filters) : undefined;
       
-      return getFieldOptions(
-        doctype,
-        fieldname,
-        filters
-      ).then(options => ({
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(options, null, 2),
-          },
-        ],
-      })).catch(error => ({
-        content: [
-          {
-            type: "text",
-            text: `Error fetching field options: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      }));
-    } catch (error) {
-      return Promise.resolve({
-        content: [
-          {
-            type: "text",
-            text: `Error fetching field options: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      });
+      try {
+        // First get the field metadata to understand what we're dealing with
+        const schema = await getDocTypeSchema(doctype);
+        const field = schema.fields.find((f: any) => f.fieldname === fieldname);
+        
+        if (!field) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Field ${fieldname} not found in DocType ${doctype}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+        
+        // Get the options
+        const options = await getFieldOptions(doctype, fieldname, formattedFilters);
+        
+        // Add field metadata to the response
+        const fieldInfo = {
+          fieldname: field.fieldname,
+          label: field.label,
+          fieldtype: field.fieldtype,
+          required: field.required,
+          description: field.description,
+          options: field.options,
+        };
+        
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Field Information:\n${JSON.stringify(fieldInfo, null, 2)}\n\nAvailable Options (${options.length}):\n${JSON.stringify(options, null, 2)}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, `get_field_options(${doctype}, ${fieldname})`);
+      }
     }
-  }
 
-  return Promise.resolve({
-    content: [
-      {
-        type: "text",
-        text: `Schema operations module doesn't handle tool: ${name}`,
-      },
-    ],
-    isError: true,
-  });
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Schema operations module doesn't handle tool: ${name}`,
+        },
+      ],
+      isError: true,
+    };
+  } catch (error) {
+    return formatErrorResponse(error, `schema_operations.${name}`);
+  }
 }
 
 export function setupSchemaTools(server: Server): void {
@@ -150,6 +217,18 @@ export function setupSchemaTools(server: Server): void {
         mimeType: "application/json",
         description: "Available options for a Link or Select field",
       },
+      {
+        uriTemplate: "schema://modules",
+        name: "Module List",
+        mimeType: "application/json",
+        description: "List of all modules in the system",
+      },
+      {
+        uriTemplate: "schema://doctypes",
+        name: "DocType List",
+        mimeType: "application/json",
+        description: "List of all DocTypes in the system",
+      },
     ],
   }));
 
@@ -157,13 +236,42 @@ export function setupSchemaTools(server: Server): void {
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const { uri } = request.params;
 
-    // Handle DocType schema resource
-    const schemaMatch = uri.match(/^schema:\/\/([^\/]+)$/);
-    if (schemaMatch) {
-      try {
+    try {
+      // Handle DocType schema resource
+      const schemaMatch = uri.match(/^schema:\/\/([^\/]+)$/);
+      if (schemaMatch) {
         const doctype = decodeURIComponent(schemaMatch[1]);
+        
+        // Special case for modules list
+        if (doctype === "modules") {
+          const modules = await getAllModules();
+          return {
+            contents: [
+              {
+                uri,
+                mimeType: "application/json",
+                text: JSON.stringify(modules, null, 2),
+              },
+            ],
+          };
+        }
+        
+        // Special case for doctypes list
+        if (doctype === "doctypes") {
+          const doctypes = await getAllDocTypes();
+          return {
+            contents: [
+              {
+                uri,
+                mimeType: "application/json",
+                text: JSON.stringify(doctypes, null, 2),
+              },
+            ],
+          };
+        }
+        
+        // Regular DocType schema
         const schema = await getDocTypeSchema(doctype);
-
         return {
           contents: [
             {
@@ -173,18 +281,11 @@ export function setupSchemaTools(server: Server): void {
             },
           ],
         };
-      } catch (error) {
-        throw new McpError(
-          ErrorCode.InternalError,
-          `Error fetching schema: ${(error as Error).message}`
-        );
       }
-    }
 
-    // Handle field options resource
-    const optionsMatch = uri.match(/^schema:\/\/([^\/]+)\/([^\/]+)\/options$/);
-    if (optionsMatch) {
-      try {
+      // Handle field options resource
+      const optionsMatch = uri.match(/^schema:\/\/([^\/]+)\/([^\/]+)\/options$/);
+      if (optionsMatch) {
         const doctype = decodeURIComponent(optionsMatch[1]);
         const fieldname = decodeURIComponent(optionsMatch[2]);
         const options = await getFieldOptions(doctype, fieldname);
@@ -198,17 +299,30 @@ export function setupSchemaTools(server: Server): void {
             },
           ],
         };
-      } catch (error) {
+      }
+
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `Unknown resource URI: ${uri}`
+      );
+    } catch (error) {
+      console.error(`Error handling resource request for ${uri}:`, error);
+      
+      if (error instanceof McpError) {
+        throw error;
+      }
+      
+      if (error instanceof FrappeApiError) {
         throw new McpError(
           ErrorCode.InternalError,
-          `Error fetching field options: ${(error as Error).message}`
+          error.message
         );
       }
+      
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Error processing resource request: ${(error as Error).message}`
+      );
     }
-
-    throw new McpError(
-      ErrorCode.InvalidRequest,
-      `Unknown resource URI: ${uri}`
-    );
   });
 }

@@ -9,14 +9,69 @@ import {
   updateDocument,
   deleteDocument,
   listDocuments,
+  FrappeApiError
 } from "./frappe-api.js";
+import { getRequiredFields, formatFilters } from "./frappe-helpers.js";
+import { FRAPPE_INSTRUCTIONS } from "./frappe-instructions.js";
+
+/**
+ * Format error response with detailed information
+ */
+function formatErrorResponse(error: any, operation: string): any {
+  console.error(`Error in ${operation}:`, error);
+  
+  let errorMessage = `Error in ${operation}: ${error.message || 'Unknown error'}`;
+  let errorDetails = null;
+  
+  if (error instanceof FrappeApiError) {
+    errorMessage = error.message;
+    errorDetails = {
+      statusCode: error.statusCode,
+      endpoint: error.endpoint,
+      details: error.details
+    };
+  }
+  
+  return {
+    content: [
+      {
+        type: "text",
+        text: errorMessage,
+      },
+      ...(errorDetails ? [
+        {
+          type: "text",
+          text: `\nDetails: ${JSON.stringify(errorDetails, null, 2)}`,
+        }
+      ] : [])
+    ],
+    isError: true,
+  };
+}
+
+/**
+ * Validate document values against required fields
+ */
+async function validateDocumentValues(doctype: string, values: Record<string, any>): Promise<string[]> {
+  try {
+    const requiredFields = await getRequiredFields(doctype);
+    const missingFields = requiredFields
+      .filter(field => !values.hasOwnProperty(field.fieldname))
+      .map(field => field.fieldname);
+    
+    return missingFields;
+  } catch (error) {
+    console.error(`Error validating document values for ${doctype}:`, error);
+    return []; // Return empty array on error to avoid blocking the operation
+  }
+}
 
 // Export a handler function for document tool calls
-export function handleDocumentToolCall(request: any): Promise<any> {
+export async function handleDocumentToolCall(request: any): Promise<any> {
   const { name, arguments: args } = request.params;
 
   if (!args) {
-    return Promise.resolve({
+    return {
       content: [
         {
           type: "text",
@@ -24,17 +79,19 @@ export function handleDocumentToolCall(request: any): Promise<any> {
         },
       ],
       isError: true,
-    });
+    };
   }
 
-  // Handle document operations
-  if (name === "create_document") {
-    try {
+  try {
+    console.error(`Handling document tool: ${name} with args:`, args);
+
+    // Handle document operations
+    if (name === "create_document") {
       const doctype = args.doctype as string;
       const values = args.values as Record<string, any>;
       
       if (!doctype || !values) {
-        return Promise.resolve({
+        return {
           content: [
             {
               type: "text",
@@ -42,44 +99,47 @@ export function handleDocumentToolCall(request: any): Promise<any> {
             },
           ],
           isError: true,
-        });
+        };
       }
       
-      return createDocument(doctype, values).then(result => ({
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      })).catch(error => ({
-        content: [
-          {
-            type: "text",
-            text: `Error creating document: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      }));
-    } catch (error) {
-      return Promise.resolve({
-        content: [
-          {
-            type: "text",
-            text: `Error creating document: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      });
-    }
-  } else if (name === "get_document") {
-    try {
+      // Validate required fields
+      const missingFields = await validateDocumentValues(doctype, values);
+      if (missingFields.length > 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Missing required fields: ${missingFields.join(', ')}`,
+            },
+            {
+              type: "text",
+              text: "\nTip: Use get_required_fields tool to see all required fields for this DocType.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      
+      try {
+        const result = await createDocument(doctype, values);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Document created successfully:\n\n${JSON.stringify(result, null, 2)}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, `create_document(${doctype})`);
+      }
+    } else if (name === "get_document") {
       const doctype = args.doctype as string;
       const docName = args.name as string;
       const fields = args.fields as string[] | undefined;
       
       if (!doctype || !docName) {
-        return Promise.resolve({
+        return {
           content: [
             {
               type: "text",
@@ -87,44 +147,29 @@ export function handleDocumentToolCall(request: any): Promise<any> {
             },
           ],
           isError: true,
-        });
+        };
       }
       
-      return getDocument(doctype, docName, fields).then(document => ({
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(document, null, 2),
-          },
-        ],
-      })).catch(error => ({
-        content: [
-          {
-            type: "text",
-            text: `Error retrieving document: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      }));
-    } catch (error) {
-      return Promise.resolve({
-        content: [
-          {
-            type: "text",
-            text: `Error retrieving document: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      });
-    }
-  } else if (name === "update_document") {
-    try {
+      try {
+        const document = await getDocument(doctype, docName, fields);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(document, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, `get_document(${doctype}, ${docName})`);
+      }
+    } else if (name === "update_document") {
       const doctype = args.doctype as string;
       const docName = args.name as string;
       const values = args.values as Record<string, any>;
       
       if (!doctype || !docName || !values) {
-        return Promise.resolve({
+        return {
           content: [
             {
               type: "text",
@@ -132,43 +177,28 @@ export function handleDocumentToolCall(request: any): Promise<any> {
             },
           ],
           isError: true,
-        });
+        };
       }
       
-      return updateDocument(doctype, docName, values).then(result => ({
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      })).catch(error => ({
-        content: [
-          {
-            type: "text",
-            text: `Error updating document: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      }));
-    } catch (error) {
-      return Promise.resolve({
-        content: [
-          {
-            type: "text",
-            text: `Error updating document: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      });
-    }
-  } else if (name === "delete_document") {
-    try {
+      try {
+        const result = await updateDocument(doctype, docName, values);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Document updated successfully:\n\n${JSON.stringify(result, null, 2)}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, `update_document(${doctype}, ${docName})`);
+      }
+    } else if (name === "delete_document") {
       const doctype = args.doctype as string;
       const docName = args.name as string;
       
       if (!doctype || !docName) {
-        return Promise.resolve({
+        return {
           content: [
             {
               type: "text",
@@ -176,38 +206,26 @@ export function handleDocumentToolCall(request: any): Promise<any> {
             },
           ],
           isError: true,
-        });
+        };
       }
       
-      return deleteDocument(doctype, docName).then(() => ({
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({ success: true }, null, 2),
-          },
-        ],
-      })).catch(error => ({
-        content: [
-          {
-            type: "text",
-            text: `Error deleting document: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      }));
-    } catch (error) {
-      return Promise.resolve({
-        content: [
-          {
-            type: "text",
-            text: `Error deleting document: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      });
-    }
-  } else if (name === "list_documents") {
-    try {
+      try {
+        await deleteDocument(doctype, docName);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: `Document ${doctype}/${docName} deleted successfully`
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, `delete_document(${doctype}, ${docName})`);
+      }
+    } else if (name === "list_documents") {
       const doctype = args.doctype as string;
       const filters = args.filters as Record<string, any> | undefined;
       const fields = args.fields as string[] | undefined;
@@ -216,7 +234,7 @@ export function handleDocumentToolCall(request: any): Promise<any> {
       const limit_start = args.limit_start as number | undefined;
       
       if (!doctype) {
-        return Promise.resolve({
+        return {
           content: [
             {
               type: "text",
@@ -224,54 +242,59 @@ export function handleDocumentToolCall(request: any): Promise<any> {
             },
           ],
           isError: true,
-        });
+        };
       }
       
-      return listDocuments(
-        doctype,
-        filters,
-        fields,
-        limit,
-        order_by,
-        limit_start
-      ).then(documents => ({
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(documents, null, 2),
-          },
-        ],
-      })).catch(error => ({
-        content: [
-          {
-            type: "text",
-            text: `Error listing documents: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      }));
-    } catch (error) {
-      return Promise.resolve({
-        content: [
-          {
-            type: "text",
-            text: `Error listing documents: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      });
+      try {
+        // Format filters if provided
+        const formattedFilters = filters ? formatFilters(filters) : undefined;
+        
+        const documents = await listDocuments(
+          doctype,
+          formattedFilters,
+          fields,
+          limit,
+          order_by,
+          limit_start
+        );
+        
+        // Add pagination info if applicable
+        let paginationInfo = "";
+        if (limit) {
+          const startIndex = limit_start || 0;
+          const endIndex = startIndex + documents.length;
+          paginationInfo = `\n\nShowing items ${startIndex + 1}-${endIndex}`;
+          
+          if (documents.length === limit) {
+            paginationInfo += ` (more items may be available, use limit_start=${endIndex} to see next page)`;
+          }
+        }
+        
+        return {
+          content: [
+            {
+              type: "text",
+              text: `${JSON.stringify(documents, null, 2)}${paginationInfo}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, `list_documents(${doctype})`);
+      }
     }
-  }
 
-  return Promise.resolve({
-    content: [
-      {
-        type: "text",
-        text: `Document operations module doesn't handle tool: ${name}`,
-      },
-    ],
-    isError: true,
-  });
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Document operations module doesn't handle tool: ${name}`,
+        },
+      ],
+      isError: true,
+    };
+  } catch (error) {
+    return formatErrorResponse(error, `document_operations.${name}`);
+  }
 }
 
 export function setupDocumentTools(server: Server): void {

@@ -1,7 +1,7 @@
 {
   "name": "frappe-mcp-server",
-  "version": "0.1.0",
-  "description": "Model Context Protocol server for Frappe Framework",
+  "version": "0.2.0",
+  "description": "Enhanced Model Context Protocol server for Frappe Framework with comprehensive API instructions and helper tools",
   "main": "build/index.js",
   "type": "module",
   "scripts": {
@@ -9,9 +9,10 @@
     "start": "node build/index.js",
     "dev": "ts-node --esm src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "test-server": "node test-server.js"
+    "test-server": "node test-server.js",
+    "test-tools": "node test-tools.js"
   },
-  "keywords": ["frappe", "mcp", "ai"],
+  "keywords": ["frappe", "mcp", "ai", "claude", "anthropic", "erp"],
   "author": "",
   "license": "ISC",
   "dependencies": {
@@ -22,5 +23,12 @@
     "@types/node": "^22.13.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/frappe-mcp-server.git"
   }
 }
