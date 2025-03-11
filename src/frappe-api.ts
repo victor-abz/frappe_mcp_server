@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig } from "axios";
 import { formatFilters } from "./frappe-helpers.js";
+import { FrappeApp } from "frappe-js-sdk";
 
 /**
  * Error class for Frappe API errors
@@ -42,7 +43,7 @@ export class FrappeApiError extends Error {
                 }
               })
             : [serverMessages];
-          
+
           message = `Frappe server message during ${operation}: ${parsedMessages.map((m: any) => m.message || m).join("; ")}`;
           details = { serverMessages: parsedMessages };
         } catch (e) {
@@ -59,48 +60,13 @@ export class FrappeApiError extends Error {
   }
 }
 
-// Configure axios instance
-const apiKey = process.env.FRAPPE_API_KEY;
-const apiSecret = process.env.FRAPPE_API_SECRET;
-const api: AxiosInstance = axios.create({
-  baseURL: process.env.FRAPPE_URL || "http://localhost:8000",
-  headers: {
-    "Content-Type": "application/json",
-    "Authorization": `token ${apiKey}:${apiSecret}` // Directly set authorization header
-  },
-  // Add timeout to prevent hanging requests
-  timeout: 30000, // 30 seconds
+// Initialize Frappe JS SDK
+const frappe = new FrappeApp(process.env.FRAPPE_URL || "http://localhost:8000", {
+  useToken: true,
+  token: () => `${process.env.FRAPPE_API_KEY}:${process.env.FRAPPE_API_SECRET}`,
+  type: "token", // For API key/secret pairs
 });
 
-// Add request interceptor for logging
-api.interceptors.request.use((config) => {
-  console.error(`[API Request] ${config.method?.toUpperCase()} ${config.url}`);
-  return config;
-});
-
-// Add response interceptor for logging and error handling
-api.interceptors.response.use(
-  (response) => {
-    console.error(`[API Response] ${response.status} ${response.config.url}`);
-    return response;
-  },
-  (error: AxiosError) => {
-    if (error.response) {
-      console.error(`[API Error] ${error.response.status} ${error.config?.url}: ${error.message}`);
-    } else if (error.request) {
-      console.error(`[API Error] No response received: ${error.message}`);
-    } else {
-      console.error(`[API Error] Request setup failed: ${error.message}`);
-    }
-    return Promise.reject(error);
-  }
-);
-
-// Set authentication - No longer needed as auth is set directly
-// export function setAuth(apiKey: string, apiSecret: string): void {
-//   api.defaults.headers.common["Authorization"] = `token ${apiKey}:${apiSecret}`;
-//   console.error("Authentication credentials set");
-// }
 
 /**
  * Helper function to handle API errors
@@ -124,15 +90,17 @@ export async function getDocument(
     if (!name) throw new Error("Document name is required");
 
     const fieldsParam = fields ? `?fields=${JSON.stringify(fields)}` : "";
-    const response = await api.get(
-      `/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}${fieldsParam}`
-    );
-    
-    if (!response.data || !response.data.data) {
+    // const response = await api.get(  // replaced with frappe
+    const response = await frappe.db().getDoc(
+     doctype,
+     name
+   );
+
+    if (!response) { // changed from response.data.data to response
       throw new Error(`Invalid response format for document ${doctype}/${name}`);
     }
-    
-    return response.data.data;
+
+    return response; // changed from response.data.data to response
   } catch (error) {
     return handleApiError(error, `get_document(${doctype}, ${name})`);
   }
@@ -148,13 +116,15 @@ export async function createDocument(
       throw new Error("Document values are required");
     }
 
-    const response = await api.post(`/api/resource/${encodeURIComponent(doctype)}`, values);
-    
-    if (!response.data || !response.data.data) {
+    // const response = await api.post(`/api/resource/${encodeURIComponent(doctype)}`, values); // replaced with frappe
+    const response = await frappe.db().createDoc(doctype, values);
+
+
+    if (!response) { // changed from response.data.data to response
       throw new Error(`Invalid response format for creating ${doctype}`);
     }
-    
-    return response.data.data;
+
+    return response; // changed from response.data.data to response
   } catch (error) {
     return handleApiError(error, `create_document(${doctype})`);
   }
@@ -172,16 +142,15 @@ export async function updateDocument(
       throw new Error("Update values are required");
     }
 
-    const response = await api.put(
-      `/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`,
-      values
-    );
-    
-    if (!response.data || !response.data.data) {
+    // const response = await api.put( // replaced with frappe
+    const response = await frappe.db().updateDoc(doctype, name, values);
+
+
+    if (!response) { // changed from response.data.data to response
       throw new Error(`Invalid response format for updating ${doctype}/${name}`);
     }
-    
-    return response.data.data;
+
+    return response; // changed from response.data.data to response
   } catch (error) {
     return handleApiError(error, `update_document(${doctype}, ${name})`);
   }
@@ -195,11 +164,15 @@ export async function deleteDocument(
     if (!doctype) throw new Error("DocType is required");
     if (!name) throw new Error("Document name is required");
 
-    const response = await api.delete(
-      `/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`
-    );
-    
-    return response.data.data;
+    // const response = await api.delete( // replaced with frappe
+    const response = await frappe.db().deleteDoc(doctype, name);
+
+
+    if (!response) { // changed from response.data.data to response
+      return response; // changed from response.data.data to response
+    }
+    return response;
+
   } catch (error) {
     return handleApiError(error, `delete_document(${doctype}, ${name})`);
   }
@@ -217,28 +190,30 @@ export async function listDocuments(
     if (!doctype) throw new Error("DocType is required");
 
     const params: Record<string, string> = {};
-    
+
     if (filters) params.filters = JSON.stringify(filters);
     if (fields) params.fields = JSON.stringify(fields);
     if (limit !== undefined) params.limit = limit.toString();
     if (order_by) params.order_by = order_by;
     if (limit_start !== undefined) params.limit_start = limit_start.toString();
 
-    const config: AxiosRequestConfig = {
-      params: params
-    };
-
     console.error(`[DEBUG] Requesting documents for ${doctype} with params:`, params);
-    
-    const response = await api.get(`/api/resource/${encodeURIComponent(doctype)}`, config);
-    
-    if (!response.data || !response.data.data) {
+
+    const response = await frappe.db().getDocList(doctype, {
+      fields: fields,
+      filters: filters as any[], // Cast filters to any[] to bypass type checking
+      orderBy: order_by ? { field: order_by, order: 'asc' } : undefined,
+      limit_start: limit_start,
+      limit: limit
+    });
+
+    if (!response) {
       throw new Error(`Invalid response format for listing ${doctype}`);
     }
-    
-    console.error(`[DEBUG] Retrieved ${response.data.data.length} ${doctype} documents`);
-    
-    return response.data.data;
+
+    console.error(`[DEBUG] Retrieved ${response.length} ${doctype} documents`);
+
+    return response;
   } catch (error) {
     return handleApiError(error, `list_documents(${doctype})`);
   }
@@ -257,13 +232,15 @@ export async function callMethod(
   try {
     if (!method) throw new Error("Method name is required");
 
-    const response = await api.post(`/api/method/${method}`, params || {});
-    
-    if (!response.data) {
+    // const response = await api.post(`/api/method/${method}`, params || {}); // replaced with frappe
+    const response = await frappe.call().post(method, params);
+
+
+    if (!response) { // changed from response.data.message to response
       throw new Error(`Invalid response format for method ${method}`);
     }
-    
-    return response.data.message;
+
+    return response; // changed from response.data.message to response
   } catch (error) {
     return handleApiError(error, `call_method(${method})`);
   }
@@ -283,13 +260,8 @@ export async function getDocTypeSchema(doctype: string): Promise<any> {
     console.error(`Using standard API endpoint for ${doctype}`);
     let response;
     try {
-      response = await api.get(
-        `/api/v2/doctype/${encodeURIComponent(doctype)}/meta`, {
-          headers: {
-            'Cache-Control': 'no-cache'
-          }
-        }
-      );
+      // response = await api.get( // replaced with frappe
+      response = await frappe.call().get('frappe.get_meta', { doctype: doctype }); // Use frappe.call().get to call frappe.get_meta
       console.error(`Got response from standard API endpoint for ${doctype}`);
       console.error(`Raw response data:`, JSON.stringify(response?.data, null, 2)); // Log raw response data
     } catch (error) {
@@ -298,7 +270,7 @@ export async function getDocTypeSchema(doctype: string): Promise<any> {
     }
 
     // Directly use response data from standard API endpoint (/api/v2/doctype/{doctype}/meta)
-    const docTypeData = response?.data?.data; // Access schema data under response.data.data
+    const docTypeData = response; // changed from response?.data?.data to response
     console.error(`Using /api/v2/doctype/{doctype}/meta format`);
 
     if (docTypeData) {
@@ -380,37 +352,37 @@ export async function getDocTypeSchema(doctype: string): Promise<any> {
       if (!doctypeDoc) {
         throw new Error(`DocType ${doctype} not found`);
       }
-        
+
       console.error(`DocTypeDoc.fields before schema construction:`, doctypeDoc.fields); // Log fields
       console.error(`DocTypeDoc.permissions before schema construction:`, doctypeDoc.permissions); // Log permissions
-        
-        return {
-          name: doctype,
-          label: doctypeDoc.name || doctype,
-          description: doctypeDoc.description,
-          module: doctypeDoc.module,
-          issingle: doctypeDoc.issingle === 1,
-          istable: doctypeDoc.istable === 1,
-          custom: doctypeDoc.custom === 1,
-          fields: doctypeDoc.fields || [], // Use fields from doctypeDoc if available, otherwise default to empty array
-          permissions: doctypeDoc.permissions || [], // Use permissions from doctypeDoc if available, otherwise default to empty array
-          autoname: doctypeDoc.autoname,
-          name_case: doctypeDoc.name_case,
-          workflow: null,
-          is_submittable: doctypeDoc.is_submittable === 1,
-          quick_entry: doctypeDoc.quick_entry === 1,
-          track_changes: doctypeDoc.track_changes === 1,
-          track_views: doctypeDoc.track_views === 1,
-          has_web_view: doctypeDoc.has_web_view === 1,
-          allow_rename: doctypeDoc.allow_rename === 1,
-          allow_copy: doctypeDoc.allow_copy === 1,
-          allow_import: doctypeDoc.allow_import === 1,
-          allow_events_in_timeline: doctypeDoc.allow_events_in_timeline === 1,
-          allow_auto_repeat: doctypeDoc.allow_auto_repeat === 1,
-          document_type: doctypeDoc.document_type,
-          icon: doctypeDoc.icon,
-          max_attachments: doctypeDoc.max_attachments,
-        };
+
+      return {
+        name: doctype,
+        label: doctypeDoc.name || doctype,
+        description: doctypeDoc.description,
+        module: doctypeDoc.module,
+        issingle: doctypeDoc.issingle === 1,
+        istable: doctypeDoc.istable === 1,
+        custom: doctypeDoc.custom === 1,
+        fields: doctypeDoc.fields || [], // Use fields from doctypeDoc if available, otherwise default to empty array
+        permissions: doctypeDoc.permissions || [], // Use permissions from doctypeDoc if available, otherwise default to empty array
+        autoname: doctypeDoc.autoname,
+        name_case: doctypeDoc.name_case,
+        workflow: null,
+        is_submittable: doctypeDoc.is_submittable === 1,
+        quick_entry: doctypeDoc.quick_entry === 1,
+        track_changes: doctypeDoc.track_changes === 1,
+        track_views: doctypeDoc.track_views === 1,
+        has_web_view: doctypeDoc.has_web_view === 1,
+        allow_rename: doctypeDoc.allow_rename === 1,
+        allow_copy: doctypeDoc.allow_copy === 1,
+        allow_import: doctypeDoc.allow_import === 1,
+        allow_events_in_timeline: doctypeDoc.allow_events_in_timeline === 1,
+        allow_auto_repeat: doctypeDoc.allow_auto_repeat === 1,
+        document_type: doctypeDoc.document_type,
+        icon: doctypeDoc.icon,
+        max_attachments: doctypeDoc.max_attachments,
+      };
 
 
     } catch (error) {
@@ -436,11 +408,11 @@ export async function getFieldOptions(
 
     // First get the field metadata to determine the type and linked DocType
     const schema = await getDocTypeSchema(doctype);
-    
+
     if (!schema || !schema.fields || !Array.isArray(schema.fields)) {
       throw new Error(`Invalid schema returned for DocType ${doctype}`);
     }
-    
+
     const field = schema.fields.find((f: any) => f.fieldname === fieldname);
 
     if (!field) {
@@ -453,32 +425,28 @@ export async function getFieldOptions(
       if (!linkedDocType) {
         throw new Error(`Link field ${fieldname} has no options (linked DocType) specified`);
       }
-      
+
       console.error(`Getting options for Link field ${fieldname} from DocType ${linkedDocType}`);
-      
+
       try {
         // Try to get the title field for the linked DocType
         const linkedSchema = await getDocTypeSchema(linkedDocType);
         const titleField = linkedSchema.fields.find((f: any) => f.fieldname === "title" || f.bold === 1);
         const displayFields = titleField ? ["name", titleField.fieldname] : ["name"];
+
+        // const response = await api.get(`/api/resource/${encodeURIComponent(linkedDocType)}`, { // replaced with frappe
+        const response = await frappe.db().getDocList(linkedDocType, {limit: 50, fields:displayFields, filters:filters});
         
-        const response = await api.get(`/api/resource/${encodeURIComponent(linkedDocType)}`, {
-          params: {
-            filters: filters ? JSON.stringify(filters) : undefined,
-            fields: JSON.stringify(displayFields),
-            limit: 50 // Add a reasonable limit to avoid performance issues
-          },
-        });
-        
-        if (!response.data || !response.data.data) {
+
+        if (!response) { // changed from response.data.data to response
           throw new Error(`Invalid response for DocType ${linkedDocType}`);
         }
 
-        return response.data.data.map((item: any) => {
+        return response.map((item: any) => { // changed from response.data.data.map to response.map
           const label = titleField && item[titleField.fieldname]
             ? `${item.name} - ${item[titleField.fieldname]}`
             : item.name;
-            
+
           return {
             value: item.name,
             label: label,
@@ -487,18 +455,15 @@ export async function getFieldOptions(
       } catch (error) {
         console.error(`Error fetching options for Link field ${fieldname}:`, error);
         // Try a simpler approach as fallback
-        const response = await api.get(`/api/resource/${encodeURIComponent(linkedDocType)}`, {
-          params: {
-            fields: JSON.stringify(["name"]),
-            limit: 50
-          },
-        });
-        
-        if (!response.data || !response.data.data) {
+        // const response = await api.get(`/api/resource/${encodeURIComponent(linkedDocType)}`, { // replaced with frappe
+        const response = await frappe.db().getDocList(linkedDocType, {limit: 50, fields: ["name"], filters:filters});
+
+
+        if (!response) { // changed from response.data.data to response
           throw new Error(`Invalid response for DocType ${linkedDocType}`);
         }
 
-        return response.data.data.map((item: any) => ({
+        return response.map((item: any) => ({ // changed from response.data.data.map to response.map
           value: item.name,
           label: item.name,
         }));
@@ -506,11 +471,11 @@ export async function getFieldOptions(
     } else if (field.fieldtype === "Select") {
       // For Select fields, parse the options string
       console.error(`Getting options for Select field ${fieldname}: ${field.options}`);
-      
+
       if (!field.options) {
         return [];
       }
-      
+
       return field.options.split("\n")
         .filter((option: string) => option.trim() !== '')
         .map((option: string) => ({
@@ -541,18 +506,15 @@ export async function getFieldOptions(
  */
 export async function getAllDocTypes(): Promise<string[]> {
   try {
-    const response = await api.get('/api/resource/DocType', {
-      params: {
-        fields: JSON.stringify(["name"]),
-        limit: 1000
-      }
-    });
-    
-    if (!response.data || !response.data.data) {
+    // const response = await api.get('/api/resource/DocType', { // replaced with frappe
+    const response = await frappe.db().getDocList('DocType', {limit: 1000, fields: ["name"]});
+
+
+    if (!response) { // changed from response.data.data to response
       throw new Error('Invalid response format for DocType list');
     }
-    
-    return response.data.data.map((item: any) => item.name);
+
+    return response.map((item: any) => item.name); // changed from response.data.data.map to response.map
   } catch (error) {
     return handleApiError(error, 'get_all_doctypes');
   }
@@ -564,18 +526,15 @@ export async function getAllDocTypes(): Promise<string[]> {
  */
 export async function getAllModules(): Promise<string[]> {
   try {
-    const response = await api.get('/api/resource/Module Def', {
-      params: {
-        fields: JSON.stringify(["name", "module_name"]),
-        limit: 100
-      }
-    });
-    
-    if (!response.data || !response.data.data) {
+    // const response = await api.get('/api/resource/Module Def', { // replaced with frappe
+    const response = await frappe.db().getDocList('Module Def', {limit: 100, fields: ["name", "module_name"]});
+  
+
+    if (!response) { // changed from response.data.data to response
       throw new Error('Invalid response format for Module list');
     }
-    
-    return response.data.data.map((item: any) => item.name || item.module_name);
+
+    return response.map((item: any) => item.name || item.module_name); // changed from response.data.data.map to response.map
   } catch (error) {
     return handleApiError(error, 'get_all_modules');
   }
