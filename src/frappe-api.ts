@@ -348,7 +348,7 @@ export async function getDocTypeSchema(doctype: string): Promise<any> {
       const doctypeDoc = await getDocument("DocType", doctype);
       console.error(`DocType document response:`, JSON.stringify(doctypeDoc).substring(0, 200) + "...");
       console.error(`Full DocType document response:`, doctypeDoc); // Log full response
-
+      
       if (!doctypeDoc) {
         throw new Error(`DocType ${doctype} not found`);
       }
@@ -435,7 +435,7 @@ export async function getFieldOptions(
         const displayFields = titleField ? ["name", titleField.fieldname] : ["name"];
 
         // const response = await api.get(`/api/resource/${encodeURIComponent(linkedDocType)}`, { // replaced with frappe
-        const response = await frappe.db().getDocList(linkedDocType, {limit: 50, fields:displayFields, filters:filters});
+        const response = await frappe.db().getDocList(linkedDocType, {limit: 50, fields:displayFields, filters: filters as any});
         
 
         if (!response) { // changed from response.data.data to response
@@ -456,7 +456,7 @@ export async function getFieldOptions(
         console.error(`Error fetching options for Link field ${fieldname}:`, error);
         // Try a simpler approach as fallback
         // const response = await api.get(`/api/resource/${encodeURIComponent(linkedDocType)}`, { // replaced with frappe
-        const response = await frappe.db().getDocList(linkedDocType, {limit: 50, fields: ["name"], filters:filters});
+        const response = await frappe.db().getDocList(linkedDocType, {limit: 50, fields: ["name"], filters: filters as any});
 
 
         if (!response) { // changed from response.data.data to response
