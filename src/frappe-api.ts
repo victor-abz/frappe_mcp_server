@@ -2,6 +2,12 @@ import axios, { AxiosInstance, AxiosError, AxiosRequestConfig } from "axios";
 import { formatFilters } from "./frappe-helpers.js";
 import { FrappeApp } from "frappe-js-sdk";
 
+// Authentication state tracking
+let isAuthenticated = false;
+let authenticationInProgress = false;
+let lastAuthAttempt = 0;
+const AUTH_TIMEOUT = 1000 * 60 * 30; // 30 minutes
+
 /**
  * Error class for Frappe API errors
  */
@@ -36,12 +42,12 @@ export class FrappeApiError extends Error {
           const serverMessages = JSON.parse(data._server_messages);
           const parsedMessages = Array.isArray(serverMessages)
             ? serverMessages.map((msg: string) => {
-                try {
-                  return JSON.parse(msg);
-                } catch {
-                  return msg;
-                }
-              })
+              try {
+                return JSON.parse(msg);
+              } catch {
+                return msg;
+              }
+            })
             : [serverMessages];
 
           message = `Frappe server message during ${operation}: ${parsedMessages.map((m: any) => m.message || m).join("; ")}`;
@@ -61,11 +67,133 @@ export class FrappeApiError extends Error {
 }
 
 // Initialize Frappe JS SDK
+console.error(`Initializing Frappe JS SDK with URL: ${process.env.FRAPPE_URL || "http://localhost:8000"}`);
+console.error(`Using API Key: ${process.env.FRAPPE_API_KEY ? process.env.FRAPPE_API_KEY.substring(0, 4) + '...' : 'not set'}`);
+console.error(`Using API Secret: ${process.env.FRAPPE_API_SECRET ? '***' : 'not set'}`);
+console.error(`Username available: ${process.env.FRAPPE_USERNAME ? 'yes' : 'no'}`);
+console.error(`Password available: ${process.env.FRAPPE_PASSWORD ? 'yes' : 'no'}`);
+
+// Token-based authentication (primary method)
 const frappe = new FrappeApp(process.env.FRAPPE_URL || "http://localhost:8000", {
   useToken: true,
   token: () => `${process.env.FRAPPE_API_KEY}:${process.env.FRAPPE_API_SECRET}`,
   type: "token", // For API key/secret pairs
 });
+
+// Password-based authentication (fallback method)
+const frappePassword = new FrappeApp(process.env.FRAPPE_URL || "http://localhost:8000");
+
+// Add request interceptor to include X-Press-Team header and log requests
+frappe.axios.interceptors.request.use(config => {
+  config.headers = config.headers || {};
+  config.headers['X-Press-Team'] = process.env.FRAPPE_TEAM_NAME || "";
+  console.error(`Making request to: ${config.url}`);
+  console.error(`Request method: ${config.method}`);
+  console.error(`Request headers:`, JSON.stringify(config.headers, null, 2));
+  if (config.data) {
+    console.error(`Request data:`, JSON.stringify(config.data, null, 2));
+  }
+  return config;
+});
+// Add response interceptor to log responses
+frappe.axios.interceptors.response.use(
+  response => {
+    console.error(`Response status: ${response.status}`);
+    console.error(`Response headers:`, JSON.stringify(response.headers, null, 2));
+    console.error(`Response data:`, JSON.stringify(response.data, null, 2));
+    return response;
+  },
+  error => {
+    console.error(`Response error:`, error);
+    if (error.response) {
+      console.error(`Error status: ${error.response.status}`);
+      console.error(`Error data:`, JSON.stringify(error.response.data, null, 2));
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Add the same interceptors to the password-based client
+frappePassword.axios.interceptors.request.use(config => {
+  config.headers = config.headers || {};
+  config.headers['X-Press-Team'] = process.env.FRAPPE_TEAM_NAME || "";
+  console.error(`[Password Auth] Making request to: ${config.url}`);
+  console.error(`[Password Auth] Request method: ${config.method}`);
+  console.error(`[Password Auth] Request headers:`, JSON.stringify(config.headers, null, 2));
+  if (config.data) {
+    console.error(`[Password Auth] Request data:`, JSON.stringify(config.data, null, 2));
+  }
+  return config;
+});
+
+frappePassword.axios.interceptors.response.use(
+  response => {
+    console.error(`[Password Auth] Response status: ${response.status}`);
+    console.error(`[Password Auth] Response headers:`, JSON.stringify(response.headers, null, 2));
+    console.error(`[Password Auth] Response data:`, JSON.stringify(response.data, null, 2));
+    return response;
+  },
+  error => {
+    console.error(`[Password Auth] Response error:`, error);
+    if (error.response) {
+      console.error(`[Password Auth] Error status: ${error.response.status}`);
+      console.error(`[Password Auth] Error data:`, JSON.stringify(error.response.data, null, 2));
+    }
+    return Promise.reject(error);
+  }
+);
+
+/**
+ * Authenticate with username and password
+ */
+export async function authenticateWithPassword(): Promise<boolean> {
+  // Don't authenticate if already in progress
+  if (authenticationInProgress) {
+    console.error("Authentication already in progress, waiting...");
+    // Wait for current authentication to complete
+    while (authenticationInProgress) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return isAuthenticated;
+  }
+
+  // Check if we've authenticated recently
+  const now = Date.now();
+  if (isAuthenticated && (now - lastAuthAttempt < AUTH_TIMEOUT)) {
+    console.error("Using existing authentication session");
+    return true;
+  }
+
+  // Start authentication
+  authenticationInProgress = true;
+
+  try {
+    if (!process.env.FRAPPE_USERNAME || !process.env.FRAPPE_PASSWORD) {
+      console.error("Username or password not provided in environment variables");
+      isAuthenticated = false;
+      return false;
+    }
+
+    console.error(`Attempting to login with username: ${process.env.FRAPPE_USERNAME}`);
+
+    const response = await frappePassword.auth().loginWithUsernamePassword({
+      username: process.env.FRAPPE_USERNAME,
+      password: process.env.FRAPPE_PASSWORD
+    });
+
+    console.error("Login response:", JSON.stringify(response, null, 2));
+    isAuthenticated = true;
+    lastAuthAttempt = now;
+    return true;
+  } catch (error) {
+    console.error("Error authenticating with username/password:", error);
+    isAuthenticated = false;
+    return false;
+  } finally {
+    authenticationInProgress = false;
+  }
+}
+
 
 
 /**
@@ -92,9 +220,9 @@ export async function getDocument(
     const fieldsParam = fields ? `?fields=${JSON.stringify(fields)}` : "";
     // const response = await api.get(  // replaced with frappe
     const response = await frappe.db().getDoc(
-     doctype,
-     name
-   );
+      doctype,
+      name
+    );
 
     if (!response) { // changed from response.data.data to response
       throw new Error(`Invalid response format for document ${doctype}/${name}`);
@@ -103,6 +231,45 @@ export async function getDocument(
     return response; // changed from response.data.data to response
   } catch (error) {
     return handleApiError(error, `get_document(${doctype}, ${name})`);
+  }
+}
+
+/**
+ * Get a document using password authentication
+ */
+export async function getDocumentWithAuth(
+  doctype: string,
+  name: string,
+  fields?: string[]
+): Promise<any> {
+  try {
+    if (!doctype) throw new Error("DocType is required");
+    if (!name) throw new Error("Document name is required");
+
+    // Ensure we're authenticated
+    const authSuccess = await authenticateWithPassword();
+    if (!authSuccess) {
+      throw new Error("Failed to authenticate with username/password");
+    }
+
+    console.error(`Getting document ${doctype}/${name} using password auth`);
+
+    const response = await frappePassword.db().getDoc(
+      doctype,
+      name
+    );
+
+    console.error(`Get document response (password auth):`,
+      JSON.stringify(response, null, 2));
+
+    if (!response) {
+      throw new Error(`Invalid response format for document ${doctype}/${name}`);
+    }
+
+    return response;
+  } catch (error) {
+    console.error(`Error in getDocumentWithAuth:`, error);
+    return handleApiError(error, `get_document_with_auth(${doctype}, ${name})`);
   }
 }
 
@@ -116,17 +283,102 @@ export async function createDocument(
       throw new Error("Document values are required");
     }
 
+    console.error(`Creating document of type ${doctype} with values:`, JSON.stringify(values, null, 2));
+
     // const response = await api.post(`/api/resource/${encodeURIComponent(doctype)}`, values); // replaced with frappe
     const response = await frappe.db().createDoc(doctype, values);
 
+    console.error(`Create document response:`, JSON.stringify(response, null, 2));
 
     if (!response) { // changed from response.data.data to response
       throw new Error(`Invalid response format for creating ${doctype}`);
     }
 
+    // Try to verify the document was created
+    try {
+      console.error(`Attempting to verify document creation by listing documents`);
+      const filters: Record<string, any> = {};
+      if (values.title) {
+        filters['title'] = ['=', values.title];
+      } else if (values.description) {
+        filters['description'] = ['like', `%${values.description.substring(0, 20)}%`];
+      }
+
+      if (Object.keys(filters).length > 0) {
+        const documents = await frappe.db().getDocList(doctype, {
+          filters: filters as any[],
+          limit: 5
+        });
+        console.error(`Verification query results:`, JSON.stringify(documents, null, 2));
+      }
+    } catch (verifyError) {
+      console.error(`Error verifying document creation:`, verifyError);
+    }
+
     return response; // changed from response.data.data to response
   } catch (error) {
+    console.error(`Error in createDocument:`, error);
     return handleApiError(error, `create_document(${doctype})`);
+  }
+}
+
+/**
+ * Create a document using password authentication
+ */
+export async function createDocumentWithAuth(
+  doctype: string,
+  values: Record<string, any>
+): Promise<any> {
+  try {
+    if (!doctype) throw new Error("DocType is required");
+    if (!values || Object.keys(values).length === 0) {
+      throw new Error("Document values are required");
+    }
+
+    // Ensure we're authenticated
+    const authSuccess = await authenticateWithPassword();
+    if (!authSuccess) {
+      throw new Error("Failed to authenticate with username/password");
+    }
+
+    console.error(`Creating document of type ${doctype} with values using password auth:`,
+      JSON.stringify(values, null, 2));
+
+    const response = await frappePassword.db().createDoc(doctype, values);
+
+    console.error(`Create document response (password auth):`,
+      JSON.stringify(response, null, 2));
+
+    if (!response) {
+      throw new Error(`Invalid response format for creating ${doctype}`);
+    }
+
+    // Verification step
+    try {
+      console.error(`Verifying document creation with password auth`);
+      const filters: Record<string, any> = {};
+      if (values.title) {
+        filters['title'] = ['=', values.title];
+      } else if (values.description) {
+        filters['description'] = ['like', `%${values.description.substring(0, 20)}%`];
+      }
+
+      if (Object.keys(filters).length > 0) {
+        const documents = await frappePassword.db().getDocList(doctype, {
+          filters: filters as any[],
+          limit: 5
+        });
+        console.error(`Verification results (password auth):`,
+          JSON.stringify(documents, null, 2));
+      }
+    } catch (verifyError) {
+      console.error(`Error verifying document creation (password auth):`, verifyError);
+    }
+
+    return response;
+  } catch (error) {
+    console.error(`Error in createDocumentWithAuth:`, error);
+    return handleApiError(error, `create_document_with_auth(${doctype})`);
   }
 }
 
@@ -156,6 +408,46 @@ export async function updateDocument(
   }
 }
 
+/**
+ * Update a document using password authentication
+ */
+export async function updateDocumentWithAuth(
+  doctype: string,
+  name: string,
+  values: Record<string, any>
+): Promise<any> {
+  try {
+    if (!doctype) throw new Error("DocType is required");
+    if (!name) throw new Error("Document name is required");
+    if (!values || Object.keys(values).length === 0) {
+      throw new Error("Update values are required");
+    }
+
+    // Ensure we're authenticated
+    const authSuccess = await authenticateWithPassword();
+    if (!authSuccess) {
+      throw new Error("Failed to authenticate with username/password");
+    }
+
+    console.error(`Updating document ${doctype}/${name} with values using password auth:`,
+      JSON.stringify(values, null, 2));
+
+    const response = await frappePassword.db().updateDoc(doctype, name, values);
+
+    console.error(`Update document response (password auth):`,
+      JSON.stringify(response, null, 2));
+
+    if (!response) {
+      throw new Error(`Invalid response format for updating ${doctype}/${name}`);
+    }
+
+    return response;
+  } catch (error) {
+    console.error(`Error in updateDocumentWithAuth:`, error);
+    return handleApiError(error, `update_document_with_auth(${doctype}, ${name})`);
+  }
+}
+
 export async function deleteDocument(
   doctype: string,
   name: string
@@ -175,6 +467,41 @@ export async function deleteDocument(
 
   } catch (error) {
     return handleApiError(error, `delete_document(${doctype}, ${name})`);
+  }
+}
+
+/**
+ * Delete a document using password authentication
+ */
+export async function deleteDocumentWithAuth(
+  doctype: string,
+  name: string
+): Promise<any> {
+  try {
+    if (!doctype) throw new Error("DocType is required");
+    if (!name) throw new Error("Document name is required");
+
+    // Ensure we're authenticated
+    const authSuccess = await authenticateWithPassword();
+    if (!authSuccess) {
+      throw new Error("Failed to authenticate with username/password");
+    }
+
+    console.error(`Deleting document ${doctype}/${name} using password auth`);
+
+    const response = await frappePassword.db().deleteDoc(doctype, name);
+
+    console.error(`Delete document response (password auth):`,
+      JSON.stringify(response, null, 2));
+
+    if (!response) {
+      return response;
+    }
+    return response;
+
+  } catch (error) {
+    console.error(`Error in deleteDocumentWithAuth:`, error);
+    return handleApiError(error, `delete_document_with_auth(${doctype}, ${name})`);
   }
 }
 
@@ -216,6 +543,57 @@ export async function listDocuments(
     return response;
   } catch (error) {
     return handleApiError(error, `list_documents(${doctype})`);
+  }
+}
+
+/**
+ * List documents using password authentication
+ */
+export async function listDocumentsWithAuth(
+  doctype: string,
+  filters?: Record<string, any>,
+  fields?: string[],
+  limit?: number,
+  order_by?: string,
+  limit_start?: number
+): Promise<any[]> {
+  try {
+    if (!doctype) throw new Error("DocType is required");
+
+    // Ensure we're authenticated
+    const authSuccess = await authenticateWithPassword();
+    if (!authSuccess) {
+      throw new Error("Failed to authenticate with username/password");
+    }
+
+    const params: Record<string, string> = {};
+
+    if (filters) params.filters = JSON.stringify(filters);
+    if (fields) params.fields = JSON.stringify(fields);
+    if (limit !== undefined) params.limit = limit.toString();
+    if (order_by) params.order_by = order_by;
+    if (limit_start !== undefined) params.limit_start = limit_start.toString();
+
+    console.error(`[Password Auth] Requesting documents for ${doctype} with params:`, params);
+
+    const response = await frappePassword.db().getDocList(doctype, {
+      fields: fields,
+      filters: filters as any[], // Cast filters to any[] to bypass type checking
+      orderBy: order_by ? { field: order_by, order: 'asc' } : undefined,
+      limit_start: limit_start,
+      limit: limit
+    });
+
+    if (!response) {
+      throw new Error(`Invalid response format for listing ${doctype}`);
+    }
+
+    console.error(`[Password Auth] Retrieved ${response.length} ${doctype} documents`);
+
+    return response;
+  } catch (error) {
+    console.error(`Error in listDocumentsWithAuth:`, error);
+    return handleApiError(error, `list_documents_with_auth(${doctype})`);
   }
 }
 
@@ -348,7 +726,7 @@ export async function getDocTypeSchema(doctype: string): Promise<any> {
       const doctypeDoc = await getDocument("DocType", doctype);
       console.error(`DocType document response:`, JSON.stringify(doctypeDoc).substring(0, 200) + "...");
       console.error(`Full DocType document response:`, doctypeDoc); // Log full response
-      
+
       if (!doctypeDoc) {
         throw new Error(`DocType ${doctype} not found`);
       }
@@ -435,8 +813,8 @@ export async function getFieldOptions(
         const displayFields = titleField ? ["name", titleField.fieldname] : ["name"];
 
         // const response = await api.get(`/api/resource/${encodeURIComponent(linkedDocType)}`, { // replaced with frappe
-        const response = await frappe.db().getDocList(linkedDocType, {limit: 50, fields:displayFields, filters: filters as any});
-        
+        const response = await frappe.db().getDocList(linkedDocType, { limit: 50, fields: displayFields, filters: filters as any });
+
 
         if (!response) { // changed from response.data.data to response
           throw new Error(`Invalid response for DocType ${linkedDocType}`);
@@ -456,7 +834,7 @@ export async function getFieldOptions(
         console.error(`Error fetching options for Link field ${fieldname}:`, error);
         // Try a simpler approach as fallback
         // const response = await api.get(`/api/resource/${encodeURIComponent(linkedDocType)}`, { // replaced with frappe
-        const response = await frappe.db().getDocList(linkedDocType, {limit: 50, fields: ["name"], filters: filters as any});
+        const response = await frappe.db().getDocList(linkedDocType, { limit: 50, fields: ["name"], filters: filters as any });
 
 
         if (!response) { // changed from response.data.data to response
@@ -507,7 +885,7 @@ export async function getFieldOptions(
 export async function getAllDocTypes(): Promise<string[]> {
   try {
     // const response = await api.get('/api/resource/DocType', { // replaced with frappe
-    const response = await frappe.db().getDocList('DocType', {limit: 1000, fields: ["name"]});
+    const response = await frappe.db().getDocList('DocType', { limit: 1000, fields: ["name"] });
 
 
     if (!response) { // changed from response.data.data to response
@@ -527,8 +905,8 @@ export async function getAllDocTypes(): Promise<string[]> {
 export async function getAllModules(): Promise<string[]> {
   try {
     // const response = await api.get('/api/resource/Module Def', { // replaced with frappe
-    const response = await frappe.db().getDocList('Module Def', {limit: 100, fields: ["name", "module_name"]});
-  
+    const response = await frappe.db().getDocList('Module Def', { limit: 100, fields: ["name", "module_name"] });
+
 
     if (!response) { // changed from response.data.data to response
       throw new Error('Invalid response format for Module list');

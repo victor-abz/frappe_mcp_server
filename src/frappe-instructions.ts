@@ -475,12 +475,12 @@ export function getInstructions(category: string, operation: string): string {
   if (!categoryData) {
     return `Category '${category}' not found in instructions.`;
   }
-  
+
   const operationData = categoryData[operation];
   if (!operationData) {
     return `Operation '${operation}' not found in category '${category}'.`;
   }
-  
+
   return `${operationData.description}\n\n${operationData.usage}`;
 }
 
@@ -490,3 +490,122 @@ export function getInstructions(category: string, operation: string): string {
 export function getCommonDocTypes(category: string): string[] {
   return COMMON_DOCTYPES[category as keyof typeof COMMON_DOCTYPES] || [];
 }
+
+// Define helper tools
+export const HELPER_TOOLS = [
+  {
+    name: "find_doctypes",
+    description: "Find DocTypes in the system matching a search term",
+    inputSchema: {
+      type: "object",
+      properties: {
+        search_term: { type: "string", description: "Search term to look for in DocType names" },
+        module: { type: "string", description: "Filter by module name (optional)" },
+        is_table: { type: "boolean", description: "Filter by table DocTypes (optional)" },
+        is_single: { type: "boolean", description: "Filter by single DocTypes (optional)" },
+        is_custom: { type: "boolean", description: "Filter by custom DocTypes (optional)" },
+        limit: { type: "number", description: "Maximum number of results (optional, default 20)" }
+      },
+      required: []
+    }
+  },
+  {
+    name: "get_module_list",
+    description: "Get a list of all modules in the system",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: "get_doctypes_in_module",
+    description: "Get a list of DocTypes in a specific module",
+    inputSchema: {
+      type: "object",
+      properties: {
+        module: { type: "string", description: "Module name" }
+      },
+      required: ["module"]
+    }
+  },
+  {
+    name: "check_doctype_exists",
+    description: "Check if a DocType exists in the system",
+    inputSchema: {
+      type: "object",
+      properties: {
+        doctype: { type: "string", description: "DocType name to check" }
+      },
+      required: ["doctype"]
+    }
+  },
+  {
+    name: "check_document_exists",
+    description: "Check if a document exists",
+    inputSchema: {
+      type: "object",
+      properties: {
+        doctype: { type: "string", description: "DocType name" },
+        name: { type: "string", description: "Document name to check" }
+      },
+      required: ["doctype", "name"]
+    }
+  },
+  {
+    name: "get_document_count",
+    description: "Get a count of documents matching filters",
+    inputSchema: {
+      type: "object",
+      properties: {
+        doctype: { type: "string", description: "DocType name" },
+        filters: {
+          type: "object",
+          description: "Filters to apply (optional)",
+          additionalProperties: true
+        }
+      },
+      required: ["doctype"]
+    }
+  },
+  {
+    name: "get_naming_info",
+    description: "Get the naming series information for a DocType",
+    inputSchema: {
+      type: "object",
+      properties: {
+        doctype: { type: "string", description: "DocType name" }
+      },
+      required: ["doctype"]
+    }
+  },
+  {
+    name: "get_required_fields",
+    description: "Get a list of required fields for a DocType",
+    inputSchema: {
+      type: "object",
+      properties: {
+        doctype: { type: "string", description: "DocType name" }
+      },
+      required: ["doctype"]
+    }
+  },
+  {
+    name: "get_api_instructions",
+    description: "Get detailed instructions for using the Frappe API",
+    inputSchema: {
+      type: "object",
+      properties: {
+        category: {
+          type: "string",
+          description: "Instruction category (DOCUMENT_OPERATIONS, SCHEMA_OPERATIONS, ADVANCED_OPERATIONS, BEST_PRACTICES)"
+        },
+        operation: {
+          type: "string",
+          description: "Operation name (e.g., CREATE, GET, UPDATE, DELETE, LIST, GET_DOCTYPE_SCHEMA, etc.)"
+        }
+      },
+      required: ["category", "operation"]
+    }
+  }
+];
