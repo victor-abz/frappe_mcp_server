@@ -273,6 +273,179 @@ export async function getDocumentWithAuth(
   }
 }
 
+/**
+ * Verify that a document was successfully created
+ */
+async function verifyDocumentCreation(
+  doctype: string,
+  values: Record<string, any>,
+  creationResponse: any
+): Promise<{ success: boolean; message: string }> {
+  try {
+    // First check if we have a name in the response
+    if (!creationResponse.name) {
+      return { success: false, message: "Response does not contain a document name" };
+    }
+
+    // Try to fetch the document directly by name
+    try {
+      const document = await frappe.db().getDoc(doctype, creationResponse.name);
+      if (document && document.name === creationResponse.name) {
+        return { success: true, message: "Document verified by direct fetch" };
+      }
+    } catch (error) {
+      console.error(`Error fetching document by name during verification:`, error);
+      // Continue with alternative verification methods
+    }
+
+    // Try to find the document by filtering
+    const filters: Record<string, any> = {};
+
+    // Use the most unique fields for filtering
+    if (values.name) {
+      filters['name'] = ['=', values.name];
+    } else if (values.title) {
+      filters['title'] = ['=', values.title];
+    } else if (values.description) {
+      // Use a substring of the description to avoid issues with long text
+      filters['description'] = ['like', `%${values.description.substring(0, 20)}%`];
+    }
+
+    if (Object.keys(filters).length > 0) {
+      const documents = await frappe.db().getDocList(doctype, {
+        filters: filters as any[],
+        limit: 5
+      });
+
+      if (documents && documents.length > 0) {
+        // Check if any of the returned documents match our expected name
+        const matchingDoc = documents.find(doc => doc.name === creationResponse.name);
+        if (matchingDoc) {
+          return { success: true, message: "Document verified by filter search" };
+        }
+
+        // If we found documents but none match our expected name, that's suspicious
+        return {
+          success: false,
+          message: `Found ${documents.length} documents matching filters, but none match the expected name ${creationResponse.name}`
+        };
+      }
+
+      return {
+        success: false,
+        message: "No documents found matching the creation filters"
+      };
+    }
+
+    // If we couldn't verify with filters, return a warning
+    return {
+      success: false,
+      message: "Could not verify document creation - no suitable filters available"
+    };
+  } catch (verifyError) {
+    return {
+      success: false,
+      message: `Error during verification: ${(verifyError as Error).message}`
+    };
+  }
+}
+
+/**
+ * Create a document with retry logic
+ */
+async function createDocumentWithRetry(
+  doctype: string,
+  values: Record<string, any>,
+  maxRetries = 3
+): Promise<any> {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.error(`Attempt ${attempt} to create document of type ${doctype}`);
+
+      const result = await frappe.db().createDoc(doctype, values);
+
+      // Verify document creation
+      const verificationResult = await verifyDocumentCreation(doctype, values, result);
+      if (verificationResult.success) {
+        console.error(`Document creation verified on attempt ${attempt}`);
+        return { ...result, _verification: verificationResult };
+      }
+
+      // If verification failed, throw an error to trigger retry
+      lastError = new Error(`Verification failed: ${verificationResult.message}`);
+      console.error(`Verification failed on attempt ${attempt}: ${verificationResult.message}`);
+
+      // Wait before retrying (exponential backoff)
+      const delay = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s, etc.
+      await new Promise(resolve => setTimeout(resolve, delay));
+    } catch (error) {
+      lastError = error;
+      console.error(`Error on attempt ${attempt}:`, error);
+
+      // Wait before retrying
+      const delay = Math.pow(2, attempt - 1) * 1000;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  // If we've exhausted all retries, throw the last error
+  throw lastError || new Error(`Failed to create document after ${maxRetries} attempts`);
+}
+
+/**
+ * Log operation for transaction-like pattern
+ */
+async function logOperation(
+  operationId: string,
+  status: 'start' | 'success' | 'failure' | 'error',
+  data: any
+): Promise<void> {
+  // This could write to a local log file, a database, or even a separate API
+  console.error(`[Operation ${operationId}] ${status}:`, JSON.stringify(data, null, 2));
+
+  // In a production system, you might want to persist this information
+  // to help with debugging and recovery
+}
+
+/**
+ * Create a document with transaction-like pattern
+ */
+async function createDocumentTransactional(
+  doctype: string,
+  values: Record<string, any>
+): Promise<any> {
+  // 1. Create a temporary log entry to track this operation
+  const operationId = `create_${doctype}_${Date.now()}`;
+  try {
+    // Log the operation start
+    await logOperation(operationId, 'start', { doctype, values });
+
+    // 2. Attempt to create the document
+    const result = await createDocumentWithRetry(doctype, values);
+
+    // 3. Verify the document was created
+    const verificationResult = await verifyDocumentCreation(doctype, values, result);
+
+    // 4. Log the operation result
+    await logOperation(operationId, verificationResult.success ? 'success' : 'failure', {
+      result,
+      verification: verificationResult
+    });
+
+    // 5. Return the result with verification info
+    return {
+      ...result,
+      _verification: verificationResult
+    };
+  } catch (error) {
+    // Log the operation error
+    await logOperation(operationId, 'error', { error: (error as Error).message });
+    throw error;
+  }
+}
+
 export async function createDocument(
   doctype: string,
   values: Record<string, any>
@@ -285,37 +458,23 @@ export async function createDocument(
 
     console.error(`Creating document of type ${doctype} with values:`, JSON.stringify(values, null, 2));
 
-    // const response = await api.post(`/api/resource/${encodeURIComponent(doctype)}`, values); // replaced with frappe
     const response = await frappe.db().createDoc(doctype, values);
 
     console.error(`Create document response:`, JSON.stringify(response, null, 2));
 
-    if (!response) { // changed from response.data.data to response
+    if (!response) {
       throw new Error(`Invalid response format for creating ${doctype}`);
     }
 
-    // Try to verify the document was created
-    try {
-      console.error(`Attempting to verify document creation by listing documents`);
-      const filters: Record<string, any> = {};
-      if (values.title) {
-        filters['title'] = ['=', values.title];
-      } else if (values.description) {
-        filters['description'] = ['like', `%${values.description.substring(0, 20)}%`];
-      }
-
-      if (Object.keys(filters).length > 0) {
-        const documents = await frappe.db().getDocList(doctype, {
-          filters: filters as any[],
-          limit: 5
-        });
-        console.error(`Verification query results:`, JSON.stringify(documents, null, 2));
-      }
-    } catch (verifyError) {
-      console.error(`Error verifying document creation:`, verifyError);
+    // IMPROVED VERIFICATION: Make this a required step, not just a try-catch
+    const verificationResult = await verifyDocumentCreation(doctype, values, response);
+    if (!verificationResult.success) {
+      console.error(`Document creation verification failed: ${verificationResult.message}`);
+      // Return the response but include verification info
+      return { ...response, _verification: verificationResult };
     }
 
-    return response; // changed from response.data.data to response
+    return response;
   } catch (error) {
     console.error(`Error in createDocument:`, error);
     return handleApiError(error, `create_document(${doctype})`);
@@ -353,26 +512,82 @@ export async function createDocumentWithAuth(
       throw new Error(`Invalid response format for creating ${doctype}`);
     }
 
-    // Verification step
-    try {
-      console.error(`Verifying document creation with password auth`);
-      const filters: Record<string, any> = {};
-      if (values.title) {
-        filters['title'] = ['=', values.title];
-      } else if (values.description) {
-        filters['description'] = ['like', `%${values.description.substring(0, 20)}%`];
-      }
+    // IMPROVED VERIFICATION: Make this a required step, not just a try-catch
+    // Use a modified version of verifyDocumentCreation that uses frappePassword
+    const verificationResult = await (async () => {
+      try {
+        // First check if we have a name in the response
+        if (!response.name) {
+          return { success: false, message: "Response does not contain a document name" };
+        }
 
-      if (Object.keys(filters).length > 0) {
-        const documents = await frappePassword.db().getDocList(doctype, {
-          filters: filters as any[],
-          limit: 5
-        });
-        console.error(`Verification results (password auth):`,
-          JSON.stringify(documents, null, 2));
+        // Try to fetch the document directly by name
+        try {
+          const document = await frappePassword.db().getDoc(doctype, response.name);
+          if (document && document.name === response.name) {
+            return { success: true, message: "Document verified by direct fetch (password auth)" };
+          }
+        } catch (error) {
+          console.error(`Error fetching document by name during verification (password auth):`, error);
+          // Continue with alternative verification methods
+        }
+
+        // Try to find the document by filtering
+        const filters: Record<string, any> = {};
+
+        // Use the most unique fields for filtering
+        if (values.name) {
+          filters['name'] = ['=', values.name];
+        } else if (values.title) {
+          filters['title'] = ['=', values.title];
+        } else if (values.description) {
+          // Use a substring of the description to avoid issues with long text
+          filters['description'] = ['like', `%${values.description.substring(0, 20)}%`];
+        }
+
+        if (Object.keys(filters).length > 0) {
+          const documents = await frappePassword.db().getDocList(doctype, {
+            filters: filters as any[],
+            limit: 5
+          });
+
+          if (documents && documents.length > 0) {
+            // Check if any of the returned documents match our expected name
+            const matchingDoc = documents.find(doc => doc.name === response.name);
+            if (matchingDoc) {
+              return { success: true, message: "Document verified by filter search (password auth)" };
+            }
+
+            // If we found documents but none match our expected name, that's suspicious
+            return {
+              success: false,
+              message: `Found ${documents.length} documents matching filters, but none match the expected name ${response.name} (password auth)`
+            };
+          }
+
+          return {
+            success: false,
+            message: "No documents found matching the creation filters (password auth)"
+          };
+        }
+
+        // If we couldn't verify with filters, return a warning
+        return {
+          success: false,
+          message: "Could not verify document creation - no suitable filters available (password auth)"
+        };
+      } catch (verifyError) {
+        return {
+          success: false,
+          message: `Error during verification (password auth): ${(verifyError as Error).message}`
+        };
       }
-    } catch (verifyError) {
-      console.error(`Error verifying document creation (password auth):`, verifyError);
+    })();
+
+    if (!verificationResult.success) {
+      console.error(`Document creation verification failed (password auth): ${verificationResult.message}`);
+      // Return the response but include verification info
+      return { ...response, _verification: verificationResult };
     }
 
     return response;
@@ -915,5 +1130,57 @@ export async function getAllModules(): Promise<string[]> {
     return response.map((item: any) => item.name || item.module_name); // changed from response.data.data.map to response.map
   } catch (error) {
     return handleApiError(error, 'get_all_modules');
+  }
+}
+
+/**
+ * Check the health of the Frappe API connection
+ * @returns Health status information
+ */
+export async function checkFrappeApiHealth(): Promise<{
+  healthy: boolean;
+  tokenAuth: boolean;
+  passwordAuth: boolean;
+  message: string;
+}> {
+  const result = {
+    healthy: false,
+    tokenAuth: false,
+    passwordAuth: false,
+    message: ""
+  };
+
+  try {
+    // Try token authentication
+    try {
+      const tokenResponse = await frappe.db().getDocList("DocType", { limit: 1 });
+      result.tokenAuth = true;
+    } catch (tokenError) {
+      console.error("Token authentication health check failed:", tokenError);
+      result.tokenAuth = false;
+    }
+
+    // Try password authentication
+    try {
+      const authSuccess = await authenticateWithPassword();
+      if (authSuccess) {
+        const passwordResponse = await frappePassword.db().getDocList("DocType", { limit: 1 });
+        result.passwordAuth = true;
+      }
+    } catch (passwordError) {
+      console.error("Password authentication health check failed:", passwordError);
+      result.passwordAuth = false;
+    }
+
+    // Set overall health status
+    result.healthy = result.tokenAuth || result.passwordAuth;
+    result.message = result.healthy
+      ? `API connection healthy. Token auth: ${result.tokenAuth}, Password auth: ${result.passwordAuth}`
+      : "API connection unhealthy. Both authentication methods failed.";
+
+    return result;
+  } catch (error) {
+    result.message = `Health check failed: ${(error as Error).message}`;
+    return result;
   }
 }

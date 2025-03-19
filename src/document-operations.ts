@@ -230,11 +230,22 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
 
         let result;
         let authMethod = "token";
+        let verificationSuccess = false;
+        let verificationMessage = "";
 
         try {
           // Try token authentication first
           result = await createDocument(doctype, values);
           console.error(`Result from createDocument (token auth):`, JSON.stringify(result, null, 2));
+
+          // IMPROVED: Check for verification result
+          if (result._verification && result._verification.success === false) {
+            verificationSuccess = false;
+            verificationMessage = result._verification.message;
+            delete result._verification; // Remove internal property before returning to client
+          } else {
+            verificationSuccess = true;
+          }
         } catch (tokenError) {
           console.error(`Error with token authentication, trying password auth:`, tokenError);
 
@@ -243,28 +254,32 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
             result = await createDocumentWithAuth(doctype, values);
             console.error(`Result from createDocumentWithAuth:`, JSON.stringify(result, null, 2));
             authMethod = "password";
+
+            // IMPROVED: Check for verification result
+            if (result._verification && result._verification.success === false) {
+              verificationSuccess = false;
+              verificationMessage = result._verification.message;
+              delete result._verification; // Remove internal property before returning to client
+            } else {
+              verificationSuccess = true;
+            }
           } catch (passwordError) {
             console.error(`Error with password authentication:`, passwordError);
             throw passwordError; // Re-throw to be caught by outer catch block
           }
         }
 
-        // Try to verify if the document was actually created
-        try {
-          console.error(`Verifying document creation by listing documents`);
-          const documents = await listDocuments(
-            doctype,
-            { description: ["like", `%${values.description?.substring(0, 20) || ""}%`] },
-            undefined,
-            5
-          );
-          console.error(`Verification results:`, JSON.stringify(documents, null, 2));
-
-          if (documents.length === 0) {
-            console.error(`Warning: Document may not have been created despite successful API response`);
-          }
-        } catch (verifyError) {
-          console.error(`Error during verification:`, verifyError);
+        // IMPROVED: Return error if verification failed
+        if (!verificationSuccess) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Error: Document creation reported success but verification failed. The document may not have been created.\n\nDetails: ${verificationMessage}`,
+              },
+            ],
+            isError: true,
+          };
         }
 
         return {
