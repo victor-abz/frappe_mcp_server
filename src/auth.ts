@@ -1,4 +1,4 @@
-import { frappePassword } from './api-client.js';
+import { frappe } from './api-client.js';
 
 // Authentication state tracking
 let isAuthenticated = false;
@@ -7,54 +7,41 @@ let lastAuthAttempt = 0;
 const AUTH_TIMEOUT = 1000 * 60 * 30; // 30 minutes
 
 /**
- * Authenticate with username and password
+ * Validates that the required API credentials are available
+ * @returns Object indicating if credentials are valid with detailed message
  */
-export async function authenticateWithPassword(): Promise<boolean> {
-  // Don't authenticate if already in progress
-  if (authenticationInProgress) {
-    console.error("Authentication already in progress, waiting...");
-    // Wait for current authentication to complete
-    while (authenticationInProgress) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    return isAuthenticated;
+export function validateApiCredentials(): {
+  valid: boolean;
+  message: string;
+} {
+  const apiKey = process.env.FRAPPE_API_KEY;
+  const apiSecret = process.env.FRAPPE_API_SECRET;
+  
+  if (!apiKey && !apiSecret) {
+    return {
+      valid: false,
+      message: "Authentication failed: Both API key and API secret are missing. API key/secret is the only supported authentication method."
+    };
   }
-
-  // Check if we've authenticated recently
-  const now = Date.now();
-  if (isAuthenticated && (now - lastAuthAttempt < AUTH_TIMEOUT)) {
-    console.error("Using existing authentication session");
-    return true;
+  
+  if (!apiKey) {
+    return {
+      valid: false,
+      message: "Authentication failed: API key is missing. API key/secret is the only supported authentication method."
+    };
   }
-
-  // Start authentication
-  authenticationInProgress = true;
-
-  try {
-    if (!process.env.FRAPPE_USERNAME || !process.env.FRAPPE_PASSWORD) {
-      console.error("Username or password not provided in environment variables");
-      isAuthenticated = false;
-      return false;
-    }
-
-    console.error(`Attempting to login with username: ${process.env.FRAPPE_USERNAME}`);
-
-    const response = await frappePassword.auth().loginWithUsernamePassword({
-      username: process.env.FRAPPE_USERNAME,
-      password: process.env.FRAPPE_PASSWORD
-    });
-
-    console.error("Login response:", JSON.stringify(response, null, 2));
-    isAuthenticated = true;
-    lastAuthAttempt = now;
-    return true;
-  } catch (error) {
-    console.error("Error authenticating with username/password:", error);
-    isAuthenticated = false;
-    return false;
-  } finally {
-    authenticationInProgress = false;
+  
+  if (!apiSecret) {
+    return {
+      valid: false,
+      message: "Authentication failed: API secret is missing. API key/secret is the only supported authentication method."
+    };
   }
+  
+  return {
+    valid: true,
+    message: "API credentials validation successful."
+  };
 }
 
 /**
@@ -64,50 +51,44 @@ export async function authenticateWithPassword(): Promise<boolean> {
 export async function checkFrappeApiHealth(): Promise<{
   healthy: boolean;
   tokenAuth: boolean;
-  passwordAuth: boolean;
   message: string;
 }> {
   const result = {
     healthy: false,
     tokenAuth: false,
-    passwordAuth: false,
     message: ""
   };
+
+  // First validate credentials
+  const credentialsCheck = validateApiCredentials();
+  if (!credentialsCheck.valid) {
+    result.message = credentialsCheck.message;
+    console.error(`API Health Check: ${result.message}`);
+    return result;
+  }
 
   try {
     // Try token authentication
     try {
+      console.error("Attempting token authentication health check...");
       const tokenResponse = await frappe.db().getDocList("DocType", { limit: 1 });
       result.tokenAuth = true;
+      console.error("Token authentication health check successful");
     } catch (tokenError) {
       console.error("Token authentication health check failed:", tokenError);
       result.tokenAuth = false;
     }
 
-    // Try password authentication
-    try {
-      const authSuccess = await authenticateWithPassword();
-      if (authSuccess) {
-        const passwordResponse = await frappePassword.db().getDocList("DocType", { limit: 1 });
-        result.passwordAuth = true;
-      }
-    } catch (passwordError) {
-      console.error("Password authentication health check failed:", passwordError);
-      result.passwordAuth = false;
-    }
-
     // Set overall health status
-    result.healthy = result.tokenAuth || result.passwordAuth;
+    result.healthy = result.tokenAuth;
     result.message = result.healthy
-      ? `API connection healthy. Token auth: ${result.tokenAuth}, Password auth: ${result.passwordAuth}`
-      : "API connection unhealthy. Both authentication methods failed.";
+      ? `API connection healthy. Token auth: ${result.tokenAuth}`
+      : "API connection unhealthy. Token authentication failed. Please ensure your API key and secret are correct.";
 
     return result;
   } catch (error) {
     result.message = `Health check failed: ${(error as Error).message}`;
+    console.error(`API Health Check Error: ${result.message}`);
     return result;
   }
 }
-
-// Import frappe here to avoid circular dependency
-import { frappe } from './api-client.js';
