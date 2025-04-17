@@ -1,6 +1,5 @@
-import { frappe, frappePassword } from './api-client.js';
+import { frappe } from './api-client.js';
 import { handleApiError } from './errors.js';
-import { authenticateWithPassword } from './auth.js';
 
 /**
  * Verify that a document was successfully created
@@ -186,6 +185,12 @@ export async function getDocument(
 
   const fieldsParam = fields ? `?fields=${JSON.stringify(fields)}` : "";
   try {
+    // Add diagnostic information about the environment
+    console.error(`[DEBUG] getDocument called for ${doctype}/${name}`);
+    console.error(`[DEBUG] API Key available: ${!!process.env.FRAPPE_API_KEY}`);
+    console.error(`[DEBUG] API Secret available: ${!!process.env.FRAPPE_API_SECRET}`);
+    console.error(`[DEBUG] Frappe URL: ${process.env.FRAPPE_URL || 'http://localhost:8000'}`);
+    
     const response = await frappe.db().getDoc(
       doctype,
       name
@@ -197,46 +202,36 @@ export async function getDocument(
 
     return response;
   } catch (error) {
-    return handleApiError(error, `get_document(${doctype}, ${name})`);
-  }
-}
-
-/**
- * Get a document using password authentication
- */
-export async function getDocumentWithAuth(
-  doctype: string,
-  name: string,
-  fields?: string[]
-): Promise<any> {
-  try {
-    if (!doctype) throw new Error("DocType is required");
-    if (!name) throw new Error("Document name is required");
-
-    // Ensure we're authenticated
-    const authSuccess = await authenticateWithPassword();
-    if (!authSuccess) {
-      throw new Error("Failed to authenticate with username/password");
-    }
-
-    console.error(`Getting document ${doctype}/${name} using password auth`);
-
-    const response = await frappePassword.db().getDoc(
-      doctype,
-      name
-    );
-
-    console.error(`Get document response (password auth):`,
-      JSON.stringify(response, null, 2));
-
-    if (!response) {
-      throw new Error(`Invalid response format for document ${doctype}/${name}`);
-    }
-
-    return response;
-  } catch (error) {
-    console.error(`Error in getDocumentWithAuth:`, error);
-    return handleApiError(error, `get_document_with_auth(${doctype}, ${name})`);
+    // Capture original error details before wrapping
+    const originalError = error as any;
+    const errorInfo = {
+      message: originalError.message,
+      code: originalError.code,
+      name: originalError.name,
+      isAxiosError: !!originalError.isAxiosError,
+      response: originalError.response ? {
+        status: originalError.response.status,
+        statusText: originalError.response.statusText,
+        data: originalError.response.data
+      } : null,
+      request: originalError.request ? 'Request object present' : null,
+      config: originalError.config ? {
+        url: originalError.config.url,
+        method: originalError.config.method,
+        baseURL: originalError.config.baseURL,
+        headers: originalError.config.headers
+      } : null
+    };
+    
+    // Log the original error details
+    console.error(`[DEBUG] Original error in getDocument:`, JSON.stringify(errorInfo, null, 2));
+    
+    // Create a custom error with the original details
+    const customError = new Error(`Document fetch error: ${errorInfo.message}`);
+    (customError as any).originalErrorInfo = errorInfo;
+    
+    // Pass to the standard error handler
+    handleApiError(customError, `get_document(${doctype}, ${name})`);
   }
 }
 
@@ -271,123 +266,7 @@ export async function createDocument(
     return response;
   } catch (error) {
     console.error(`Error in createDocument:`, error);
-    return handleApiError(error, `create_document(${doctype})`);
-  }
-}
-
-/**
- * Create a document using password authentication
- */
-export async function createDocumentWithAuth(
-  doctype: string,
-  values: Record<string, any>
-): Promise<any> {
-  try {
-    if (!doctype) throw new Error("DocType is required");
-    if (!values || Object.keys(values).length === 0) {
-      throw new Error("Document values are required");
-    }
-
-    // Ensure we're authenticated
-    const authSuccess = await authenticateWithPassword();
-    if (!authSuccess) {
-      throw new Error("Failed to authenticate with username/password");
-    }
-
-    console.error(`Creating document of type ${doctype} with values using password auth:`,
-      JSON.stringify(values, null, 2));
-
-    const response = await frappePassword.db().createDoc(doctype, values);
-
-    console.error(`Create document response (password auth):`,
-      JSON.stringify(response, null, 2));
-
-    if (!response) {
-      throw new Error(`Invalid response format for creating ${doctype}`);
-    }
-
-    // IMPROVED VERIFICATION: Make this a required step, not just a try-catch
-    // Use a modified version of verifyDocumentCreation that uses frappePassword
-    const verificationResult = await (async () => {
-      try {
-        // First check if we have a name in the response
-        if (!response.name) {
-          return { success: false, message: "Response does not contain a document name" };
-        }
-
-        // Try to fetch the document directly by name
-        try {
-          const document = await frappePassword.db().getDoc(doctype, response.name);
-          if (document && document.name === response.name) {
-            return { success: true, message: "Document verified by direct fetch (password auth)" };
-          }
-        } catch (error) {
-          console.error(`Error fetching document by name during verification (password auth):`, error);
-          // Continue with alternative verification methods
-        }
-
-        // Try to find the document by filtering
-        const filters: Record<string, any> = {};
-
-        // Use the most unique fields for filtering
-        if (values.name) {
-          filters['name'] = ['=', values.name];
-        } else if (values.title) {
-          filters['title'] = ['=', values.title];
-        } else if (values.description) {
-          // Use a substring of the description to avoid issues with long text
-          filters['description'] = ['like', `%${values.description.substring(0, 20)}%`];
-        }
-
-        if (Object.keys(filters).length > 0) {
-          const documents = await frappePassword.db().getDocList(doctype, {
-            filters: filters as any[],
-            limit: 5
-          });
-
-          if (documents && documents.length > 0) {
-            // Check if any of the returned documents match our expected name
-            const matchingDoc = documents.find(doc => doc.name === response.name);
-            if (matchingDoc) {
-              return { success: true, message: "Document verified by filter search (password auth)" };
-            }
-
-            // If we found documents but none match our expected name, that's suspicious
-            return {
-              success: false,
-              message: `Found ${documents.length} documents matching filters, but none match the expected name ${response.name} (password auth)`
-            };
-          }
-
-          return {
-            success: false,
-            message: "No documents found matching the creation filters (password auth)"
-          };
-        }
-
-        // If we couldn't verify with filters, return a warning
-        return {
-          success: false,
-          message: "Could not verify document creation - no suitable filters available (password auth)"
-        };
-      } catch (verifyError) {
-        return {
-          success: false,
-          message: `Error during verification (password auth): ${(verifyError as Error).message}`
-        };
-      }
-    })();
-
-    if (!verificationResult.success) {
-      console.error(`Document creation verification failed (password auth): ${verificationResult.message}`);
-      // Return the response but include verification info
-      return { ...response, _verification: verificationResult };
-    }
-
-    return response;
-  } catch (error) {
-    console.error(`Error in createDocumentWithAuth:`, error);
-    return handleApiError(error, `create_document_with_auth(${doctype})`);
+    handleApiError(error, `create_document(${doctype})`);
   }
 }
 
@@ -411,47 +290,7 @@ export async function updateDocument(
 
     return response;
   } catch (error) {
-    return handleApiError(error, `update_document(${doctype}, ${name})`);
-  }
-}
-
-/**
- * Update a document using password authentication
- */
-export async function updateDocumentWithAuth(
-  doctype: string,
-  name: string,
-  values: Record<string, any>
-): Promise<any> {
-  try {
-    if (!doctype) throw new Error("DocType is required");
-    if (!name) throw new Error("Document name is required");
-    if (!values || Object.keys(values).length === 0) {
-      throw new Error("Update values are required");
-    }
-
-    // Ensure we're authenticated
-    const authSuccess = await authenticateWithPassword();
-    if (!authSuccess) {
-      throw new Error("Failed to authenticate with username/password");
-    }
-
-    console.error(`Updating document ${doctype}/${name} with values using password auth:`,
-      JSON.stringify(values, null, 2));
-
-    const response = await frappePassword.db().updateDoc(doctype, name, values);
-
-    console.error(`Update document response (password auth):`,
-      JSON.stringify(response, null, 2));
-
-    if (!response) {
-      throw new Error(`Invalid response format for updating ${doctype}/${name}`);
-    }
-
-    return response;
-  } catch (error) {
-    console.error(`Error in updateDocumentWithAuth:`, error);
-    return handleApiError(error, `update_document_with_auth(${doctype}, ${name})`);
+    handleApiError(error, `update_document(${doctype}, ${name})`);
   }
 }
 
@@ -471,42 +310,7 @@ export async function deleteDocument(
     return response;
 
   } catch (error) {
-    return handleApiError(error, `delete_document(${doctype}, ${name})`);
-  }
-}
-
-/**
- * Delete a document using password authentication
- */
-export async function deleteDocumentWithAuth(
-  doctype: string,
-  name: string
-): Promise<any> {
-  try {
-    if (!doctype) throw new Error("DocType is required");
-    if (!name) throw new Error("Document name is required");
-
-    // Ensure we're authenticated
-    const authSuccess = await authenticateWithPassword();
-    if (!authSuccess) {
-      throw new Error("Failed to authenticate with username/password");
-    }
-
-    console.error(`Deleting document ${doctype}/${name} using password auth`);
-
-    const response = await frappePassword.db().deleteDoc(doctype, name);
-
-    console.error(`Delete document response (password auth):`,
-      JSON.stringify(response, null, 2));
-
-    if (!response) {
-      return response;
-    }
-    return response;
-
-  } catch (error) {
-    console.error(`Error in deleteDocumentWithAuth:`, error);
-    return handleApiError(error, `delete_document_with_auth(${doctype}, ${name})`);
+    handleApiError(error, `delete_document(${doctype}, ${name})`);
   }
 }
 
@@ -547,58 +351,7 @@ export async function listDocuments(
 
     return response;
   } catch (error) {
-    return handleApiError(error, `list_documents(${doctype})`);
-  }
-}
-
-/**
- * List documents using password authentication
- */
-export async function listDocumentsWithAuth(
-  doctype: string,
-  filters?: Record<string, any>,
-  fields?: string[],
-  limit?: number,
-  order_by?: string,
-  limit_start?: number
-): Promise<any[]> {
-  try {
-    if (!doctype) throw new Error("DocType is required");
-
-    // Ensure we're authenticated
-    const authSuccess = await authenticateWithPassword();
-    if (!authSuccess) {
-      throw new Error("Failed to authenticate with username/password");
-    }
-
-    const params: Record<string, string> = {};
-
-    if (filters) params.filters = JSON.stringify(filters);
-    if (fields) params.fields = JSON.stringify(fields);
-    if (limit !== undefined) params.limit = limit.toString();
-    if (order_by) params.order_by = order_by;
-    if (limit_start !== undefined) params.limit_start = limit_start.toString();
-
-    console.error(`[Password Auth] Requesting documents for ${doctype} with params:`, params);
-
-    const response = await frappePassword.db().getDocList(doctype, {
-      fields: fields,
-      filters: filters as any[], // Cast filters to any[] to bypass type checking
-      orderBy: order_by ? { field: order_by, order: 'asc' } : undefined,
-      limit_start: limit_start,
-      limit: limit
-    });
-
-    if (!response) {
-      throw new Error(`Invalid response format for listing ${doctype}`);
-    }
-
-    console.error(`[Password Auth] Retrieved ${response.length} ${doctype} documents`);
-
-    return response;
-  } catch (error) {
-    console.error(`Error in listDocumentsWithAuth:`, error);
-    return handleApiError(error, `list_documents_with_auth(${doctype})`);
+    handleApiError(error, `list_documents(${doctype})`);
   }
 }
 
@@ -623,6 +376,6 @@ export async function callMethod(
 
     return response;
   } catch (error) {
-    return handleApiError(error, `call_method(${method})`);
+    handleApiError(error, `call_method(${method})`);
   }
 }
