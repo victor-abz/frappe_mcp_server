@@ -20,7 +20,6 @@ export const frappePassword = new FrappeApp(process.env.FRAPPE_URL || "http://lo
 // Add request interceptor to include X-Press-Team header and log requests
 frappe.axios.interceptors.request.use(config => {
   config.headers = config.headers || {};
-  config.headers['X-Press-Team'] = process.env.FRAPPE_TEAM_NAME || "";
   console.error(`Making request to: ${config.url}`);
   console.error(`Request method: ${config.method}`);
   console.error(`Request headers:`, JSON.stringify(config.headers, null, 2));
@@ -51,7 +50,6 @@ frappe.axios.interceptors.response.use(
 // Add the same interceptors to the password-based client
 frappePassword.axios.interceptors.request.use(config => {
   config.headers = config.headers || {};
-  config.headers['X-Press-Team'] = process.env.FRAPPE_TEAM_NAME || "";
   console.error(`[Password Auth] Making request to: ${config.url}`);
   console.error(`[Password Auth] Request method: ${config.method}`);
   console.error(`[Password Auth] Request headers:`, JSON.stringify(config.headers, null, 2));
