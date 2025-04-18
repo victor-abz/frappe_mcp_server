@@ -315,7 +315,7 @@ export async function getRequiredFields(doctype: string): Promise<any[]> {
       throw new Error(`Could not get schema for DocType ${doctype}`);
     }
     
-    return schema.fields.filter((f: any) => f.required);
+    return schema.fields.filter((f: any) => f.reqd);
   } catch (error) {
     console.error(`Error getting required fields for ${doctype}:`, error);
     throw new FrappeApiError(
