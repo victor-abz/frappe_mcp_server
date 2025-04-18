@@ -18,6 +18,18 @@ import {
   listDocumentsWithAuth
 } from "./frappe-api.js";
 import { formatFilters } from "./frappe-helpers.js";
+import {
+  getDocTypeHints,
+  getWorkflowHints,
+  findWorkflowsForDocType,
+  initializeStaticHints
+} from "./static-hints.js";
+import {
+  getDocTypeUsageInstructions,
+  getAppForDocType,
+  getAppUsageInstructions,
+  initializeAppIntrospection
+} from "./app-introspection.js";
 
 // Define schema tools
 export const SCHEMA_TOOLS = [
@@ -47,6 +59,18 @@ export const SCHEMA_TOOLS = [
         }
       },
       required: ["doctype", "fieldname"]
+    }
+  },
+  {
+    name: "get_frappe_usage_info",
+    description: "Get combined information about a DocType or workflow, including schema metadata and usage guidance from static hints.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        doctype: { type: "string", description: "DocType name (optional if workflow is provided)" },
+        workflow: { type: "string", description: "Workflow name (optional if doctype is provided)" }
+      },
+      required: []
     }
   }
 ];
@@ -269,6 +293,202 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
       } catch (error) {
         return formatErrorResponse(error, `get_field_options(${doctype}, ${fieldname})`);
       }
+    } else if (name === "get_frappe_usage_info") {
+      const doctype = args.doctype as string;
+      const workflow = args.workflow as string;
+
+      if (!doctype && !workflow) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Missing required parameters: either doctype or workflow must be provided",
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      try {
+        // Initialize result object
+        const result: any = {
+          type: doctype ? "doctype" : "workflow",
+          name: doctype || workflow,
+          schema: null,
+          hints: [],
+          related_workflows: [],
+          app_instructions: null
+        };
+
+        // If doctype is provided, get the schema, doctype hints, and app instructions
+        if (doctype) {
+          try {
+            // Get schema
+            result.schema = await getDocTypeSchema(doctype);
+            
+            // Get static hints
+            result.hints = getDocTypeHints(doctype);
+            result.related_workflows = findWorkflowsForDocType(doctype);
+            
+            // Get app-provided instructions
+            result.app_instructions = await getDocTypeUsageInstructions(doctype);
+            
+            // If no app instructions but we have the app name, try to get app-level instructions
+            if (!result.app_instructions) {
+              const appName = await getAppForDocType(doctype);
+              if (appName) {
+                result.app_name = appName;
+                result.app_level_instructions = await getAppUsageInstructions(appName);
+              }
+            }
+          } catch (error) {
+            console.error(`Error getting schema for DocType ${doctype}:`, error);
+            // Continue even if schema retrieval fails, we can still provide hints
+            result.schema_error = `Error retrieving schema: ${(error as Error).message}`;
+          }
+        } else if (workflow) {
+          // If workflow is provided, get the workflow hints
+          result.hints = getWorkflowHints(workflow);
+        }
+
+        // Format the response
+        let responseText = "";
+
+        if (doctype) {
+          responseText += `# DocType: ${doctype}\n\n`;
+          
+          // Add app-provided instructions if available
+          if (result.app_instructions) {
+            const instructions = result.app_instructions.instructions;
+            
+            responseText += "## App-Provided Usage Information\n\n";
+            
+            if (instructions.description) {
+              responseText += `### Description\n\n${instructions.description}\n\n`;
+            }
+            
+            if (instructions.usage_guidance) {
+              responseText += `### Usage Guidance\n\n${instructions.usage_guidance}\n\n`;
+            }
+            
+            if (instructions.key_fields && instructions.key_fields.length > 0) {
+              responseText += "### Key Fields\n\n";
+              for (const field of instructions.key_fields) {
+                responseText += `- **${field.name}**: ${field.description}\n`;
+              }
+              responseText += "\n";
+            }
+            
+            if (instructions.common_workflows && instructions.common_workflows.length > 0) {
+              responseText += "### Common Workflows\n\n";
+              instructions.common_workflows.forEach((workflow: string, index: number) => {
+                responseText += `${index + 1}. ${workflow}\n`;
+              });
+              responseText += "\n";
+            }
+          }
+          
+          // Add static hints if available
+          if (result.hints && result.hints.length > 0) {
+            responseText += "## Static Hints\n\n";
+            for (const hint of result.hints) {
+              responseText += `${hint.hint}\n\n`;
+            }
+          }
+          
+          // If no specific instructions were found, but we have app-level instructions
+          if (!result.app_instructions && result.app_level_instructions) {
+            responseText += `## About ${result.app_name}\n\n`;
+            
+            const appInstructions = result.app_level_instructions;
+            
+            if (appInstructions.app_description) {
+              responseText += `${appInstructions.app_description}\n\n`;
+            }
+            
+            // Add a note that this DocType is part of this app
+            responseText += `The DocType "${doctype}" is part of the ${result.app_name} app.\n\n`;
+          }
+          
+          // Add schema summary if available
+          if (result.schema) {
+            const fieldTypes = result.schema.fields.reduce((acc: Record<string, number>, field: any) => {
+              acc[field.fieldtype] = (acc[field.fieldtype] || 0) + 1;
+              return acc;
+            }, {});
+
+            const requiredFields = result.schema.fields
+              .filter((field: any) => field.required)
+              .map((field: any) => field.fieldname);
+
+            responseText += "## Schema Summary\n\n";
+            responseText += `- **Module**: ${result.schema.module}\n`;
+            responseText += `- **Is Single**: ${result.schema.issingle ? "Yes" : "No"}\n`;
+            responseText += `- **Is Table**: ${result.schema.istable ? "Yes" : "No"}\n`;
+            responseText += `- **Is Custom**: ${result.schema.custom ? "Yes" : "No"}\n`;
+            responseText += `- **Field Count**: ${result.schema.fields.length}\n`;
+            responseText += `- **Field Types**: ${JSON.stringify(fieldTypes)}\n`;
+            responseText += `- **Required Fields**: ${requiredFields.join(", ")}\n\n`;
+          } else if (result.schema_error) {
+            responseText += `## Schema Error\n\n${result.schema_error}\n\n`;
+          }
+          
+          // Add related workflows if available
+          if (result.related_workflows && result.related_workflows.length > 0) {
+            responseText += "## Related Workflows\n\n";
+            for (const workflow of result.related_workflows) {
+              responseText += `### ${workflow.target}\n\n`;
+              if (workflow.description) {
+                responseText += `${workflow.description}\n\n`;
+              }
+              if (workflow.steps && workflow.steps.length > 0) {
+                responseText += "Steps:\n";
+                workflow.steps.forEach((step: string, index: number) => {
+                  responseText += `${index + 1}. ${step}\n`;
+                });
+                responseText += "\n";
+              }
+            }
+          }
+        } else if (workflow) {
+          responseText += `# Workflow: ${workflow}\n\n`;
+          
+          // Add workflow hints if available
+          if (result.hints && result.hints.length > 0) {
+            for (const hint of result.hints) {
+              if (hint.description) {
+                responseText += `## Description\n\n${hint.description}\n\n`;
+              }
+              
+              if (hint.steps && hint.steps.length > 0) {
+                responseText += "## Steps\n\n";
+                hint.steps.forEach((step: string, index: number) => {
+                  responseText += `${index + 1}. ${step}\n`;
+                });
+                responseText += "\n";
+              }
+              
+              if (hint.related_doctypes && hint.related_doctypes.length > 0) {
+                responseText += "## Related DocTypes\n\n";
+                responseText += hint.related_doctypes.join(", ") + "\n\n";
+              }
+            }
+          } else {
+            responseText += "No workflow information available.\n";
+          }
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: responseText,
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, `get_frappe_usage_info(${doctype || workflow})`);
+      }
     }
 
     return {
@@ -286,6 +506,22 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
 }
 
 export function setupSchemaTools(server: Server): void {
+  // Initialize static hints
+  console.error("Initializing static hints...");
+  initializeStaticHints().then(() => {
+    console.error("Static hints initialized successfully");
+  }).catch(error => {
+    console.error("Error initializing static hints:", error);
+  });
+  
+  // Initialize app introspection
+  console.error("Initializing app introspection...");
+  initializeAppIntrospection().then(() => {
+    console.error("App introspection initialized successfully");
+  }).catch(error => {
+    console.error("Error initializing app introspection:", error);
+  });
+
   // We no longer register tools here, only resources
   // Tools are now registered in the central handler in index.ts
 

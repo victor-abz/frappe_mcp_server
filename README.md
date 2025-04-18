@@ -29,7 +29,6 @@ The server includes comprehensive error handling, validation, and helpful respon
 npm install -g frappe-mcp-server
 ```
 
-
 Alternatively, run directly with npx:
 
 ```bash
@@ -37,10 +36,6 @@ npx frappe-mcp-server
 ```
 
 (no installation needed)
-
-
-
-
 
 ## Configuration
 
@@ -111,6 +106,7 @@ For Claude, add the following to your MCP settings configuration file:
 
 - `get_doctype_schema`: Get the complete schema for a DocType including field definitions, validations, and linked DocTypes
 - `get_field_options`: Get available options for a Link or Select field
+- `get_frappe_usage_info`: Get combined information about a DocType or workflow, including schema metadata, static hints, and app-provided usage guidance
 
 ### Helper Tools
 
@@ -132,6 +128,20 @@ For Claude, add the following to your MCP settings configuration file:
 - `schema://{doctype}/{fieldname}/options`: Available options for a Link or Select field
 - `schema://modules`: List of all modules in the system
 - `schema://doctypes`: List of all DocTypes in the system
+
+## Features
+
+### Usage Information Enhancement
+
+The server provides comprehensive usage information by combining three sources:
+
+1. **Frappe Metadata**: Schema information retrieved directly from the Frappe API
+2. **Static Hints**: Supplementary context stored in JSON files within the `static_hints/` directory
+3. **Custom App Introspection**: Usage instructions provided directly by custom Frappe apps
+
+This enhancement enables AI assistants to better understand Frappe modules, making them more effective at assisting users with Frappe-based applications.
+
+For more details, see [Usage Information Enhancement](docs/usage_info_enhancement.md).
 
 ## Examples
 
@@ -204,6 +214,20 @@ const requiredFields = await useToolWithMcp("frappe", "get_required_fields", {
 const instructions = await useToolWithMcp("frappe", "get_api_instructions", {
   category: "DOCUMENT_OPERATIONS",
   operation: "CREATE",
+});
+```
+
+### Getting Usage Information
+
+```javascript
+// Example of using the get_frappe_usage_info tool
+const salesOrderInfo = await useToolWithMcp("frappe", "get_frappe_usage_info", {
+  doctype: "Sales Order",
+});
+
+// Example of getting workflow information
+const workflowInfo = await useToolWithMcp("frappe", "get_frappe_usage_info", {
+  workflow: "Quote to Sales Order Conversion",
 });
 ```
 
