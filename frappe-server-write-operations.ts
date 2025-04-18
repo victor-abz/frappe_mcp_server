@@ -64,21 +64,12 @@ export class FrappeApiError extends Error {
     }
 }
 
-// Authentication state tracking
-let isAuthenticated = false;
-let authenticationInProgress = false;
-let lastAuthAttempt = 0;
-const AUTH_TIMEOUT = 1000 * 60 * 30; // 30 minutes
-
 // Initialize Frappe JS SDK
 const frappe = new FrappeApp(process.env.FRAPPE_URL || "http://localhost:8000", {
     useToken: true,
     token: () => `${process.env.FRAPPE_API_KEY}:${process.env.FRAPPE_API_SECRET}`,
     type: "token", // For API key/secret pairs
 });
-
-// Password-based authentication (fallback method)
-const frappePassword = new FrappeApp(process.env.FRAPPE_URL || "http://localhost:8000");
 
 // ==================== DOCUMENT CREATION ====================
 
@@ -120,121 +111,6 @@ export async function createDocument(
     }
 }
 
-/**
- * Create a document using password authentication
- */
-export async function createDocumentWithAuth(
-    doctype: string,
-    values: Record<string, any>
-): Promise<any> {
-    try {
-        if (!doctype) throw new Error("DocType is required");
-        if (!values || Object.keys(values).length === 0) {
-            throw new Error("Document values are required");
-        }
-
-        // Ensure we're authenticated
-        const authSuccess = await authenticateWithPassword();
-        if (!authSuccess) {
-            throw new Error("Failed to authenticate with username/password");
-        }
-
-        console.error(`Creating document of type ${doctype} with values using password auth:`,
-            JSON.stringify(values, null, 2));
-
-        const response = await frappePassword.db().createDoc(doctype, values);
-
-        console.error(`Create document response (password auth):`,
-            JSON.stringify(response, null, 2));
-
-        if (!response) {
-            throw new Error(`Invalid response format for creating ${doctype}`);
-        }
-
-        // IMPROVED VERIFICATION: Make this a required step, not just a try-catch
-        // Use a modified version of verifyDocumentCreation that uses frappePassword
-        const verificationResult = await (async () => {
-            try {
-                // First check if we have a name in the response
-                if (!response.name) {
-                    return { success: false, message: "Response does not contain a document name" };
-                }
-
-                // Try to fetch the document directly by name
-                try {
-                    const document = await frappePassword.db().getDoc(doctype, response.name);
-                    if (document && document.name === response.name) {
-                        return { success: true, message: "Document verified by direct fetch (password auth)" };
-                    }
-                } catch (error) {
-                    console.error(`Error fetching document by name during verification (password auth):`, error);
-                    // Continue with alternative verification methods
-                }
-
-                // Try to find the document by filtering
-                const filters: Record<string, any> = {};
-
-                // Use the most unique fields for filtering
-                if (values.name) {
-                    filters['name'] = ['=', values.name];
-                } else if (values.title) {
-                    filters['title'] = ['=', values.title];
-                } else if (values.description) {
-                    // Use a substring of the description to avoid issues with long text
-                    filters['description'] = ['like', `%${values.description.substring(0, 20)}%`];
-                }
-
-                if (Object.keys(filters).length > 0) {
-                    const documents = await frappePassword.db().getDocList(doctype, {
-                        filters: filters as any[],
-                        limit: 5
-                    });
-
-                    if (documents && documents.length > 0) {
-                        // Check if any of the returned documents match our expected name
-                        const matchingDoc = documents.find(doc => doc.name === response.name);
-                        if (matchingDoc) {
-                            return { success: true, message: "Document verified by filter search (password auth)" };
-                        }
-
-                        // If we found documents but none match our expected name, that's suspicious
-                        return {
-                            success: false,
-                            message: `Found ${documents.length} documents matching filters, but none match the expected name ${response.name} (password auth)`
-                        };
-                    }
-
-                    return {
-                        success: false,
-                        message: "No documents found matching the creation filters (password auth)"
-                    };
-                }
-
-                // If we couldn't verify with filters, return a warning
-                return {
-                    success: false,
-                    message: "Could not verify document creation - no suitable filters available (password auth)"
-                };
-            } catch (verifyError) {
-                return {
-                    success: false,
-                    message: `Error during verification (password auth): ${(verifyError as Error).message}`
-                };
-            }
-        })();
-
-        if (!verificationResult.success) {
-            console.error(`Document creation verification failed (password auth): ${verificationResult.message}`);
-            // Return the response but include verification info
-            return { ...response, _verification: verificationResult };
-        }
-
-        return response;
-    } catch (error) {
-        console.error(`Error in createDocumentWithAuth:`, error);
-        return handleApiError(error, `create_document_with_auth(${doctype})`);
-    }
-}
 
 /**
  * Verify that a document was successfully created
@@ -423,45 +299,6 @@ export async function updateDocument(
     }
 }
 
-/**
- * Update a document using password authentication
- */
-export async function updateDocumentWithAuth(
-    doctype: string,
-    name: string,
-    values: Record<string, any>
-): Promise<any> {
-    try {
-        if (!doctype) throw new Error("DocType is required");
-        if (!name) throw new Error("Document name is required");
-        if (!values || Object.keys(values).length === 0) {
-            throw new Error("Update values are required");
-        }
-
-        // Ensure we're authenticated
-        const authSuccess = await authenticateWithPassword();
-        if (!authSuccess) {
-            throw new Error("Failed to authenticate with username/password");
-        }
-
-        console.error(`Updating document ${doctype}/${name} with values using password auth:`,
-            JSON.stringify(values, null, 2));
-
-        const response = await frappePassword.db().updateDoc(doctype, name, values);
-
-        console.error(`Update document response (password auth):`,
-            JSON.stringify(response, null, 2));
-
-        if (!response) {
-            throw new Error(`Invalid response format for updating ${doctype}/${name}`);
-        }
-
-        return response;
-    } catch (error) {
-        console.error(`Error in updateDocumentWithAuth:`, error);
-        return handleApiError(error, `update_document_with_auth(${doctype}, ${name})`);
-    }
-}
 
 // ==================== DOCUMENT DELETION ====================
 
@@ -488,40 +325,6 @@ export async function deleteDocument(
     }
 }
 
-/**
- * Delete a document using password authentication
- */
-export async function deleteDocumentWithAuth(
-    doctype: string,
-    name: string
-): Promise<any> {
-    try {
-        if (!doctype) throw new Error("DocType is required");
-        if (!name) throw new Error("Document name is required");
-
-        // Ensure we're authenticated
-        const authSuccess = await authenticateWithPassword();
-        if (!authSuccess) {
-            throw new Error("Failed to authenticate with username/password");
-        }
-
-        console.error(`Deleting document ${doctype}/${name} using password auth`);
-
-        const response = await frappePassword.db().deleteDoc(doctype, name);
-
-        console.error(`Delete document response (password auth):`,
-            JSON.stringify(response, null, 2));
-
-        if (!response) {
-            return response;
-        }
-        return response;
-
-    } catch (error) {
-        console.error(`Error in deleteDocumentWithAuth:`, error);
-        return handleApiError(error, `delete_document_with_auth(${doctype}, ${name})`);
-    }
-}
 
 // ==================== METHOD CALLS ====================
 
@@ -575,56 +378,5 @@ function handleApiError(error: any, operation: string): never {
         throw FrappeApiError.fromAxiosError(error, operation);
     } else {
         throw new FrappeApiError(`Error during ${operation}: ${(error as Error).message}`);
-    }
-}
-
-/**
- * Authenticate with username and password
- */
-export async function authenticateWithPassword(): Promise<boolean> {
-    // Don't authenticate if already in progress
-    if (authenticationInProgress) {
-        console.error("Authentication already in progress, waiting...");
-        // Wait for current authentication to complete
-        while (authenticationInProgress) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
-        return isAuthenticated;
-    }
-
-    // Check if we've authenticated recently
-    const now = Date.now();
-    if (isAuthenticated && (now - lastAuthAttempt < AUTH_TIMEOUT)) {
-        console.error("Using existing authentication session");
-        return true;
-    }
-
-    // Start authentication
-    authenticationInProgress = true;
-
-    try {
-        if (!process.env.FRAPPE_USERNAME || !process.env.FRAPPE_PASSWORD) {
-            console.error("Username or password not provided in environment variables");
-            isAuthenticated = false;
-            return false;
-        }
-
-        console.error(`Attempting to login with username: ${process.env.FRAPPE_USERNAME}`);
-
-        const response = await frappePassword.auth().loginWithUsernamePassword({
-            username: process.env.FRAPPE_USERNAME,
-            password: process.env.FRAPPE_PASSWORD
-        });
-
-        console.error("Login response:", JSON.stringify(response, null, 2));
-        isAuthenticated = true;
-        lastAuthAttempt = now;
-        return true;
-    } catch (error) {
-        console.error("Error authenticating with username/password:", error);
-        isAuthenticated = false;
-        return false;
-    } finally {
-        authenticationInProgress = false;
     }
 }

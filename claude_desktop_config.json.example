@@ -8,8 +8,7 @@
       "env": {
         "FRAPPE_URL": "http://localhost:8000",
         "FRAPPE_API_KEY": "your_api_key_here",
-        "FRAPPE_API_SECRET": "your_api_secret_here",
-        "FRAPPE_TEAM_NAME": "your_team_name_here"
+        "FRAPPE_API_SECRET": "your_api_secret_here"
       },
       "disabled": false,
       "alwaysAllow": []

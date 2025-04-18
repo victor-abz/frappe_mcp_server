@@ -61,6 +61,7 @@ export const frappe = new FrappeApp(FRAPPE_URL, {
 // Add request interceptor with enhanced authentication debugging
 frappe.axios.interceptors.request.use(config => {
   config.headers = config.headers || {};
+  console.error(`Request method: ${config.method}`);
   config.headers['X-Press-Team'] = FRAPPE_TEAM_NAME;
   
   // Log basic request info
