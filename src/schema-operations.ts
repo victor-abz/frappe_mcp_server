@@ -12,10 +12,7 @@ import {
   getFieldOptions,
   FrappeApiError,
   getAllDocTypes,
-  getAllModules,
-  // Add password authentication functions
-  getDocumentWithAuth,
-  listDocumentsWithAuth
+  getAllModules
 } from "./frappe-api.js";
 import { formatFilters } from "./frappe-helpers.js";
 import {
@@ -147,56 +144,10 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
         let schema;
         let authMethod = "token";
 
-        try {
-          // Try token authentication first
-          schema = await getDocTypeSchema(doctype);
-          console.error(`Retrieved schema for ${doctype} using token auth`);
-        } catch (tokenError) {
-          console.error(`Error with token authentication, trying password auth:`, tokenError);
-
-          // Fall back to password authentication - we need to implement a custom approach
-          // since there's no direct getDocTypeSchemaWithAuth function
-          try {
-            // For DocType schemas, we can use getDocumentWithAuth to get the DocType document
-            console.error(`Attempting to get schema for ${doctype} using password auth`);
-            const doctypeDoc = await getDocumentWithAuth("DocType", doctype);
-
-            // Process the document into a schema format similar to getDocTypeSchema
-            schema = {
-              name: doctype,
-              label: doctypeDoc.name || doctype,
-              description: doctypeDoc.description,
-              module: doctypeDoc.module,
-              issingle: doctypeDoc.issingle === 1,
-              istable: doctypeDoc.istable === 1,
-              custom: doctypeDoc.custom === 1,
-              fields: doctypeDoc.fields || [],
-              permissions: doctypeDoc.permissions || [],
-              autoname: doctypeDoc.autoname,
-              name_case: doctypeDoc.name_case,
-              workflow: null,
-              is_submittable: doctypeDoc.is_submittable === 1,
-              quick_entry: doctypeDoc.quick_entry === 1,
-              track_changes: doctypeDoc.track_changes === 1,
-              track_views: doctypeDoc.track_views === 1,
-              has_web_view: doctypeDoc.has_web_view === 1,
-              allow_rename: doctypeDoc.allow_rename === 1,
-              allow_copy: doctypeDoc.allow_copy === 1,
-              allow_import: doctypeDoc.allow_import === 1,
-              allow_events_in_timeline: doctypeDoc.allow_events_in_timeline === 1,
-              allow_auto_repeat: doctypeDoc.allow_auto_repeat === 1,
-              document_type: doctypeDoc.document_type,
-              icon: doctypeDoc.icon,
-              max_attachments: doctypeDoc.max_attachments,
-            };
-
-            console.error(`Successfully created schema for ${doctype} using password auth`);
-            authMethod = "password";
-          } catch (passwordError) {
-            console.error(`Error with password authentication:`, passwordError);
-            throw passwordError; // Re-throw to be caught by outer catch block
-          }
-        }
+        // Get schema using API key/secret authentication
+        schema = await getDocTypeSchema(doctype);
+        console.error(`Retrieved schema for ${doctype} using API key/secret auth`);
+        authMethod = "api_key";
 
         // Add a summary of the schema for easier understanding
         const fieldTypes = schema.fields.reduce((acc: Record<string, number>, field: any) => {

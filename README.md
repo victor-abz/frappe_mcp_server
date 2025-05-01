@@ -19,7 +19,7 @@ The server includes comprehensive error handling, validation, and helpful respon
 
 - Node.js 18 or higher
 - A running Frappe instance (version 15 or higher)
-- API key and secret from Frappe (optional but recommended)
+- API key and secret from Frappe (**required**)
 
 ### Setup
 
@@ -39,13 +39,19 @@ npx frappe-mcp-server
 
 ## Configuration
 
-The server can be configured using environment variables:
+The server is configured using environment variables:
 
 - `FRAPPE_URL`: The URL of your Frappe instance (default: `http://localhost:8000`)
-- `FRAPPE_API_KEY`: Your Frappe API key
-- `FRAPPE_API_SECRET`: Your Frappe API secret
+- `FRAPPE_API_KEY`: Your Frappe API key (**required**)
+- `FRAPPE_API_SECRET`: Your Frappe API secret (**required**)
 
-### Getting API Credentials
+> **Important**: API key/secret authentication is the only supported authentication method. Both `FRAPPE_API_KEY` and `FRAPPE_API_SECRET` must be provided for the server to function properly. Username/password authentication is not supported.
+
+### Authentication
+
+This MCP server **only supports API key/secret authentication** via the Frappe REST API. Username/password authentication is not supported.
+
+#### Getting API Credentials
 
 To get API credentials from your Frappe instance:
 
@@ -53,6 +59,17 @@ To get API credentials from your Frappe instance:
 2. Select the user for whom you want to create the key
 3. Click "Generate Keys"
 4. Copy the API Key and API Secret
+
+#### Authentication Troubleshooting
+
+If you encounter authentication errors:
+
+1. Verify that both `FRAPPE_API_KEY` and `FRAPPE_API_SECRET` environment variables are set correctly
+2. Ensure the API key is active and not expired in your Frappe instance
+3. Check that the user associated with the API key has the necessary permissions
+4. Verify the Frappe URL is correct and accessible
+
+The server provides detailed error messages to help diagnose authentication issues.
 
 ## Usage
 
@@ -82,8 +99,8 @@ For Claude, add the following to your MCP settings configuration file:
       "args": ["frappe-mcp-server"], // Assumes frappe-mcp-server is in MCP server path
       "env": {
         "FRAPPE_URL": "https://your-frappe-instance.com",
-        "FRAPPE_API_KEY": "your_api_key",
-        "FRAPPE_API_SECRET": "your_api_secret"
+        "FRAPPE_API_KEY": "your_api_key", // REQUIRED
+        "FRAPPE_API_SECRET": "your_api_secret" // REQUIRED
       },
       "disabled": false,
       "alwaysAllow": []
@@ -91,6 +108,8 @@ For Claude, add the following to your MCP settings configuration file:
   }
 }
 ```
+
+> **Note**: Both `FRAPPE_API_KEY` and `FRAPPE_API_SECRET` environment variables are required. The server will start without them but most operations will fail with authentication errors.
 
 ## Available Tools
 

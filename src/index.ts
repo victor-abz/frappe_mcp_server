@@ -11,9 +11,21 @@ import { setupSchemaTools, handleSchemaToolCall, SCHEMA_TOOLS } from "./schema-o
 import { getInstructions, HELPER_TOOLS } from "./frappe-instructions.js";
 import { handleHelperToolCall } from "./index-helpers.js"; // Moved helper tool handlers to a separate file
 
+import { validateApiCredentials } from './auth.js';
+
 async function main() {
   console.error("Starting Frappe MCP server...");
   console.error("Current working directory:", process.cwd());
+
+  // Validate API credentials at startup
+  const credentialsCheck = validateApiCredentials();
+  if (!credentialsCheck.valid) {
+    console.error(`ERROR: ${credentialsCheck.message}`);
+    console.error("The server will start, but most operations will fail without valid API credentials.");
+    console.error("Please set FRAPPE_API_KEY and FRAPPE_API_SECRET environment variables.");
+  } else {
+    console.error("API credentials validation successful.");
+  }
 
   const server = new Server(
     {
@@ -27,15 +39,6 @@ async function main() {
       },
     }
   );
-
-  const apiKey = process.env.FRAPPE_API_KEY;
-  const apiSecret = process.env.FRAPPE_API_SECRET;
-
-  if (apiKey && apiSecret) {
-    console.error("Setting up authentication with provided API key and secret");
-  } else {
-    console.error("Warning: No API key and secret provided. Some operations may fail.");
-  }
 
   setupSchemaTools(server);
   setupDocumentTools(server);
@@ -63,6 +66,11 @@ async function main() {
       ...DOCUMENT_TOOLS,
       ...SCHEMA_TOOLS,
       ...HELPER_TOOLS,
+      {
+        name: "ping",
+        description: "A simple tool to check if the server is responding.",
+        inputSchema: { type: "object", properties: {} }, // No input needed
+      },
     ];
     return { tools };
   });
@@ -94,6 +102,14 @@ async function main() {
         return await handleHelperToolCall(request);
       }
 
+
+      if (name === "ping") {
+        console.error(`Routing to ping handler: ${name}`);
+        return {
+          content: [{ type: "text", text: "pong" }],
+          isError: false,
+        };
+      }
 
       console.error(`No handler found for tool: ${name}`);
       return {

@@ -10,11 +10,6 @@ import {
   updateDocument,
   deleteDocument,
   listDocuments,
-  createDocumentWithAuth,
-  getDocumentWithAuth,
-  updateDocumentWithAuth,
-  deleteDocumentWithAuth,
-  listDocumentsWithAuth,
   FrappeApiError
 } from "./frappe-api.js";
 import { getRequiredFields, formatFilters } from "./frappe-helpers.js";
@@ -24,17 +19,77 @@ import { FRAPPE_INSTRUCTIONS } from "./frappe-instructions.js";
  * Format error response with detailed information
  */
 function formatErrorResponse(error: any, operation: string): any {
-  console.error(`Error in ${operation}:`, error);
-
-  let errorMessage = `Error in ${operation}: ${error.message || 'Unknown error'}`;
+  // Include all error diagnostics directly in the response
+  const apiKey = process.env.FRAPPE_API_KEY;
+  const apiSecret = process.env.FRAPPE_API_SECRET;
+  
+  // Build a detailed diagnostic message
+  let diagnostics = [
+    `Error in ${operation}`,
+    `Error type: ${typeof error}`,
+    `Constructor: ${error.constructor?.name || 'unknown'}`,
+    `Is FrappeApiError: ${error instanceof FrappeApiError}`,
+    `Error properties: ${Object.keys(error).join(', ')}`,
+    `API Key available: ${!!apiKey}`,
+    `API Secret available: ${!!apiSecret}`
+  ].join('\n');
+  
+  let errorMessage = '';
   let errorDetails = null;
 
-  if (error instanceof FrappeApiError) {
+  // Check for missing credentials first as this is likely the issue
+  if (!apiKey || !apiSecret) {
+    errorMessage = `Authentication failed: ${!apiKey && !apiSecret ? 'Both API key and API secret are missing' :
+                    !apiKey ? 'API key is missing' : 'API secret is missing'}. API key/secret is the only supported authentication method.`;
+    errorDetails = {
+      error: "Missing credentials",
+      apiKeyAvailable: !!apiKey,
+      apiSecretAvailable: !!apiSecret,
+      authMethod: "API key/secret (token)",
+      diagnostics: diagnostics
+    };
+  }
+  // Then check if it's a FrappeApiError
+  else if (error instanceof FrappeApiError) {
     errorMessage = error.message;
+    // Include the full error object properties for debugging
     errorDetails = {
       statusCode: error.statusCode,
       endpoint: error.endpoint,
-      details: error.details
+      details: error.details,
+      message: error.message,
+      name: error.name,
+      stack: error.stack?.split('\n').slice(0, 3).join('\n'),
+      diagnostics: diagnostics,
+      authError: false  // Initialize the property
+    };
+    
+    // If it's an authentication error, provide more specific guidance
+    if (error.message.includes('Authentication') ||
+        error.message.includes('auth') ||
+        error.statusCode === 401 ||
+        error.statusCode === 403) {
+      
+      errorMessage = `Authentication error: ${error.message}. Please check your API key and secret.`;
+      errorDetails.authError = true;
+    }
+  }
+  // Check for Axios errors
+  else if (error.isAxiosError) {
+    errorMessage = `API request error: ${error.message}`;
+    errorDetails = {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      url: error.config?.url,
+      method: error.config?.method,
+      diagnostics: diagnostics
+    };
+  }
+  // Default error handling
+  else {
+    errorMessage = `Error in ${operation}: ${error.message || 'Unknown error'}`;
+    errorDetails = {
+      diagnostics: diagnostics
     };
   }
 
@@ -233,40 +288,18 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
         let verificationSuccess = false;
         let verificationMessage = "";
 
-        try {
-          // Try token authentication first
-          result = await createDocument(doctype, values);
-          console.error(`Result from createDocument (token auth):`, JSON.stringify(result, null, 2));
+        // Use API key/secret authentication
+        result = await createDocument(doctype, values);
+        console.error(`Result from createDocument (API key/secret auth):`, JSON.stringify(result, null, 2));
+        authMethod = "api_key";
 
-          // IMPROVED: Check for verification result
-          if (result._verification && result._verification.success === false) {
-            verificationSuccess = false;
-            verificationMessage = result._verification.message;
-            delete result._verification; // Remove internal property before returning to client
-          } else {
-            verificationSuccess = true;
-          }
-        } catch (tokenError) {
-          console.error(`Error with token authentication, trying password auth:`, tokenError);
-
-          // Fall back to password authentication
-          try {
-            result = await createDocumentWithAuth(doctype, values);
-            console.error(`Result from createDocumentWithAuth:`, JSON.stringify(result, null, 2));
-            authMethod = "password";
-
-            // IMPROVED: Check for verification result
-            if (result._verification && result._verification.success === false) {
-              verificationSuccess = false;
-              verificationMessage = result._verification.message;
-              delete result._verification; // Remove internal property before returning to client
-            } else {
-              verificationSuccess = true;
-            }
-          } catch (passwordError) {
-            console.error(`Error with password authentication:`, passwordError);
-            throw passwordError; // Re-throw to be caught by outer catch block
-          }
+        // Check for verification result
+        if (result._verification && result._verification.success === false) {
+          verificationSuccess = false;
+          verificationMessage = result._verification.message;
+          delete result._verification; // Remove internal property before returning to client
+        } else {
+          verificationSuccess = true;
         }
 
         // IMPROVED: Return error if verification failed
@@ -315,23 +348,10 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
         let document;
         let authMethod = "token";
 
-        try {
-          // Try token authentication first
-          document = await getDocument(doctype, docName, fields);
-          console.error(`Retrieved document using token auth:`, JSON.stringify(document, null, 2));
-        } catch (tokenError) {
-          console.error(`Error with token authentication, trying password auth:`, tokenError);
-
-          // Fall back to password authentication
-          try {
-            document = await getDocumentWithAuth(doctype, docName, fields);
-            console.error(`Retrieved document using password auth:`, JSON.stringify(document, null, 2));
-            authMethod = "password";
-          } catch (passwordError) {
-            console.error(`Error with password authentication:`, passwordError);
-            throw passwordError; // Re-throw to be caught by outer catch block
-          }
-        }
+        // Use API key/secret authentication
+        document = await getDocument(doctype, docName, fields);
+        console.error(`Retrieved document using API key/secret auth:`, JSON.stringify(document, null, 2));
+        authMethod = "api_key";
 
         return {
           content: [
@@ -365,23 +385,10 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
         let result;
         let authMethod = "token";
 
-        try {
-          // Try token authentication first
-          result = await updateDocument(doctype, docName, values);
-          console.error(`Result from updateDocument (token auth):`, JSON.stringify(result, null, 2));
-        } catch (tokenError) {
-          console.error(`Error with token authentication, trying password auth:`, tokenError);
-
-          // Fall back to password authentication
-          try {
-            result = await updateDocumentWithAuth(doctype, docName, values);
-            console.error(`Result from updateDocumentWithAuth:`, JSON.stringify(result, null, 2));
-            authMethod = "password";
-          } catch (passwordError) {
-            console.error(`Error with password authentication:`, passwordError);
-            throw passwordError; // Re-throw to be caught by outer catch block
-          }
-        }
+        // Use API key/secret authentication
+        result = await updateDocument(doctype, docName, values);
+        console.error(`Result from updateDocument (API key/secret auth):`, JSON.stringify(result, null, 2));
+        authMethod = "api_key";
 
         return {
           content: [
@@ -413,23 +420,10 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
       try {
         let authMethod = "token";
 
-        try {
-          // Try token authentication first
-          await deleteDocument(doctype, docName);
-          console.error(`Document deleted using token auth`);
-        } catch (tokenError) {
-          console.error(`Error with token authentication, trying password auth:`, tokenError);
-
-          // Fall back to password authentication
-          try {
-            await deleteDocumentWithAuth(doctype, docName);
-            console.error(`Document deleted using password auth`);
-            authMethod = "password";
-          } catch (passwordError) {
-            console.error(`Error with password authentication:`, passwordError);
-            throw passwordError; // Re-throw to be caught by outer catch block
-          }
-        }
+        // Use API key/secret authentication
+        await deleteDocument(doctype, docName);
+        console.error(`Document deleted using API key/secret auth`);
+        authMethod = "api_key";
 
         return {
           content: [
@@ -472,37 +466,17 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
         let documents;
         let authMethod = "token";
 
-        try {
-          // Try token authentication first
-          documents = await listDocuments(
-            doctype,
-            formattedFilters,
-            fields,
-            limit,
-            order_by,
-            limit_start
-          );
-          console.error(`Retrieved ${documents.length} documents using token auth`);
-        } catch (tokenError) {
-          console.error(`Error with token authentication, trying password auth:`, tokenError);
-
-          // Fall back to password authentication
-          try {
-            documents = await listDocumentsWithAuth(
-              doctype,
-              formattedFilters,
-              fields,
-              limit,
-              order_by,
-              limit_start
-            );
-            console.error(`Retrieved ${documents.length} documents using password auth`);
-            authMethod = "password";
-          } catch (passwordError) {
-            console.error(`Error with password authentication:`, passwordError);
-            throw passwordError; // Re-throw to be caught by outer catch block
-          }
-        }
+        // Use API key/secret authentication
+        documents = await listDocuments(
+          doctype,
+          formattedFilters,
+          fields,
+          limit,
+          order_by,
+          limit_start
+        );
+        console.error(`Retrieved ${documents.length} documents using API key/secret auth`);
+        authMethod = "api_key";
 
         // Add pagination info if applicable
         let paginationInfo = "";
