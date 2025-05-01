@@ -61,9 +61,9 @@ Example:
 Tips:
 - Required fields must be included in the values
 - For Link fields, provide the exact document name as the value
-- For Table fields, provide an array of row objects
-- Child table rows should include all required fields
-- The system will automatically set owner, creation, and modified fields
+- For Table fields, provide an array of row objects. **Do not create child documents separately before adding them to the parent document's table field.**
+- Child table rows should include all required fields.
+- The system will automatically set owner, creation, and modified fields.
       `,
     },
     GET: {
@@ -101,10 +101,10 @@ Example:
 }
 
 Tips:
-- Only include fields that need to be updated
-- For Table fields, you need to provide the entire table data, not just the changed rows
-- The system will automatically update the modified and modified_by fields
-- Some fields may be read-only and cannot be updated
+- Only include fields that need to be updated.
+- For Table fields, you need to provide the entire table data, not just the changed rows. **When updating child documents, include the 'name' field for existing rows. Do not attempt to update child documents by creating them separately.**
+- The system will automatically update the modified and modified_by fields.
+- Some fields may be read-only and cannot be updated.
       `,
     },
     DELETE: {

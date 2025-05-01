@@ -151,6 +151,7 @@ export class FrappeApiError extends Error {
  * Helper function to handle API errors
  */
 export function handleApiError(error: any, operation: string): never {
+  console.error('[DEBUG] Raw error in handleApiError:', error);
   // Check for our custom error with originalErrorInfo
   if (error.originalErrorInfo) {
     console.error(`[DEBUG] Processing error with originalErrorInfo in handleApiError`);
