@@ -64,6 +64,7 @@ Tips:
 - For Table fields, provide an array of row objects. **Do not create child documents separately before adding them to the parent document's table field.**
 - Child table rows should include all required fields.
 - The system will automatically set owner, creation, and modified fields.
+- For documents with a naming series (autoname is "naming_series"), do not include the "name" field in the values. The system will generate the name automatically.
       `,
     },
     GET: {
