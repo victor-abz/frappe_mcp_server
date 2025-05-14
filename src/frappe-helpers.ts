@@ -198,16 +198,23 @@ export async function getDocumentCount(
   filters: Record<string, any> = {}
 ): Promise<number> {
   try {
-    // Use limit=1 to minimize data transfer, we just need the count
-    const result = await listDocuments(doctype, filters, ["name"], 1);
+    // Use count(*) to get the total count of documents
+    const result = await listDocuments(
+      doctype,
+      filters,
+      ["count(name) as total_count"],
+      1
+    );
     
-    // The count is usually included in the response metadata
-    if (result && typeof result.length === 'number') {
-      return result.length;
+    // Extract the count from the result
+    if (result && result.length > 0 && result[0].total_count !== undefined) {
+      return result[0].total_count;
     }
     
     // Fallback: make another request to get all IDs and count them
-    const allIds = await listDocuments(doctype, filters, ["name"], 1000);
+    // This is less efficient but should work if the count query fails
+    console.error(`Count query didn't return expected result, using fallback method`);
+    const allIds = await listDocuments(doctype, filters, ["name"]);
     return allIds.length;
   } catch (error) {
     console.error(`Error getting document count for ${doctype}:`, error);
