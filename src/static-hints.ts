@@ -35,13 +35,9 @@ let staticHints: StaticHints = {
 export async function loadStaticHints(): Promise<StaticHints> {
   console.error('Loading static hints...');
   
-  const hintsDir = path.join(process.cwd(), 'static_hints');
+  const hintsDir = path.join(process.cwd(), 'src', 'server_hints'); // Changed path
   
-  // Create directory if it doesn't exist
-  if (!fs.existsSync(hintsDir)) {
-    console.error(`Static hints directory not found at ${hintsDir}, creating it...`);
-    fs.mkdirSync(hintsDir, { recursive: true });
-  }
+  // Directory creation logic removed
   
   // Reset the hints
   staticHints = {
