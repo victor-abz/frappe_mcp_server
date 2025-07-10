@@ -229,6 +229,105 @@ app.post('/mcp/call', async (req, res) => {
   }
 });
 
+// Root endpoint for MCP JSON-RPC requests (Claude's expected endpoint)
+app.post('/', async (req, res) => {
+  try {
+    const { method, params = {}, id = 1 } = req.body;
+    
+    // Handle MCP protocol methods
+    if (method === 'tools/list') {
+      const toolList = Object.entries(tools).map(([name, tool]) => ({
+        name,
+        description: tool.description,
+        inputSchema: tool.schema.shape ? tool.schema._def.shape() : {}
+      }));
+      
+      return res.json({
+        jsonrpc: "2.0",
+        id,
+        result: { tools: toolList }
+      });
+    }
+    
+    if (method === 'tools/call') {
+      const { name: toolName, arguments: toolArgs = {} } = params;
+      
+      if (!toolName || !tools[toolName as keyof typeof tools]) {
+        return res.status(404).json({
+          jsonrpc: "2.0",
+          id,
+          error: {
+            code: -32601,
+            message: `Tool '${toolName}' not found`,
+            data: { availableTools: Object.keys(tools) }
+          }
+        });
+      }
+
+      const toolDef = tools[toolName as keyof typeof tools];
+      const validatedArgs = toolDef.schema.parse(toolArgs);
+      const result = await toolDef.handler(validatedArgs);
+      
+      return res.json({
+        jsonrpc: "2.0",
+        id,
+        result
+      });
+    }
+    
+    if (method === 'initialize') {
+      return res.json({
+        jsonrpc: "2.0",
+        id,
+        result: {
+          protocolVersion: "2024-11-05",
+          capabilities: {
+            tools: {}
+          },
+          serverInfo: {
+            name: "frappe-mcp-server",
+            version: "0.2.16"
+          }
+        }
+      });
+    }
+    
+    // Method not found
+    return res.status(404).json({
+      jsonrpc: "2.0",
+      id,
+      error: {
+        code: -32601,
+        message: `Method '${method}' not found`
+      }
+    });
+
+  } catch (error) {
+    console.error(`Error in MCP JSON-RPC call:`, error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        jsonrpc: "2.0",
+        id: req.body.id || 1,
+        error: {
+          code: -32602,
+          message: 'Invalid parameters',
+          data: error.errors
+        }
+      });
+    }
+    
+    res.status(500).json({
+      jsonrpc: "2.0",
+      id: req.body.id || 1,
+      error: {
+        code: -32603,
+        message: error instanceof Error ? error.message : 'Internal error'
+      }
+    });
+  }
+});
+
 async function startServer() {
   try {
     console.log("Starting Frappe MCP HTTP server...");
