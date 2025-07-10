@@ -13,6 +13,14 @@ This MCP server allows AI assistants to interact with Frappe applications throug
 
 The server includes comprehensive error handling, validation, and helpful responses to make it easier for AI assistants to work with Frappe.
 
+### Transport Support
+
+The server supports multiple transport protocols:
+
+- **stdio** (default): Standard input/output for local integration with Claude Desktop and other MCP clients
+- **HTTP**: RESTful HTTP endpoints and MCP JSON-RPC over HTTP for web-based integrations (port 51966/0xCAFE)
+- **Streamable HTTP**: Modern MCP transport with optional SSE streaming for real-time updates (port 51953/0xCAF1)
+
 ## Installation
 
 ### Prerequisites
@@ -75,6 +83,8 @@ The server provides detailed error messages to help diagnose authentication issu
 
 ### Starting the Server
 
+#### stdio Transport (Default)
+
 ```bash
 npx frappe-mcp-server
 ```
@@ -85,18 +95,61 @@ Or with environment variables:
 FRAPPE_URL=https://your-frappe-instance.com FRAPPE_API_KEY=your_api_key FRAPPE_API_SECRET=your_api_secret npx frappe-mcp-server
 ```
 
+#### HTTP Transport
+
+To start the server with HTTP transport:
+
+```bash
+npm run start-http
+```
+
+The HTTP server runs on port 51966 (0xCAFE) and provides:
+- RESTful endpoints for direct HTTP integration
+- MCP JSON-RPC protocol support
+- Health check and server info endpoints
+
+Available HTTP endpoints:
+- `GET /health` - Health check
+- `GET /info` - Server information  
+- `GET /tools` - List available tools
+- `POST /call/:tool` - Call a specific tool
+- `POST /` - MCP JSON-RPC endpoint
+
+#### Streamable HTTP Transport (Recommended)
+
+To start the server with Streamable HTTP transport:
+
+```bash
+npm run start-streamable
+```
+
+The Streamable HTTP server runs on port 51953 (0xCAF1) and provides:
+- Modern MCP protocol support (version 2024-11-05)
+- Automatic content negotiation (JSON or SSE)
+- Stateful sessions with automatic cleanup
+- Real-time streaming for long-running operations
+- Heartbeat mechanism for connection health
+
+Features:
+- **Single endpoint**: All MCP operations through `POST /`
+- **Optional streaming**: Clients can request SSE by setting `Accept: text/event-stream`
+- **Session management**: Stateful operations with session IDs
+- **Progress updates**: Real-time progress for long-running tools
+
 ### Integrating with AI Assistants
 
 To use this MCP server with an AI assistant, you need to configure the assistant to connect to this server. The exact configuration depends on the AI assistant platform you're using.
 
-For Claude, add the following to your MCP settings configuration file:
+#### Claude Desktop (stdio transport)
+
+For Claude Desktop, add the following to your MCP settings configuration file:
 
 ```json
 {
   "mcpServers": {
     "frappe": {
       "command": "npx",
-      "args": ["frappe-mcp-server"], // Assumes frappe-mcp-server is in MCP server path
+      "args": ["frappe-mcp-server"],
       "env": {
         "FRAPPE_URL": "https://your-frappe-instance.com",
         "FRAPPE_API_KEY": "your_api_key", // REQUIRED
@@ -110,6 +163,41 @@ For Claude, add the following to your MCP settings configuration file:
 ```
 
 > **Note**: Both `FRAPPE_API_KEY` and `FRAPPE_API_SECRET` environment variables are required. The server will start without them but most operations will fail with authentication errors.
+
+#### Remote MCP Server (Streamable HTTP transport)
+
+For Claude Pro/Max/Teams/Enterprise users, you can deploy the Streamable HTTP server and add it as a remote MCP server:
+
+1. Deploy the Streamable HTTP server to a public URL
+2. In Claude Desktop, go to Settings > Integrations
+3. Add your MCP server URL
+
+> **Important**: Claude Desktop currently only supports stdio transport for local MCP servers configured via `claude_desktop_config.json`. Remote HTTP/Streamable servers must be added through the Settings interface.
+
+#### Other MCP Clients
+
+For MCP clients that support HTTP transport, configure them with your server URL:
+
+**Standard HTTP (legacy):**
+```
+http://localhost:51966
+```
+
+**Streamable HTTP (recommended):**
+```
+http://localhost:51953
+```
+
+Or for production deployments:
+```
+https://your-mcp-server.com
+```
+
+The Streamable HTTP transport is recommended as it:
+- Supports the latest MCP protocol (2024-11-05)
+- Provides automatic content negotiation
+- Enables real-time streaming for long operations
+- Maintains stateful sessions
 
 ## Available Tools
 

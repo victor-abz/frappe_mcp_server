@@ -1,15 +1,11 @@
 #!/usr/bin/env node
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 import { handleCallMethodToolCall } from "./document-operations.js";
-import { setupDocumentTools, handleDocumentToolCall, DOCUMENT_TOOLS } from "./document-operations.js";
-import { setupSchemaTools, handleSchemaToolCall, SCHEMA_TOOLS } from "./schema-operations.js";
-import { getInstructions, HELPER_TOOLS } from "./frappe-instructions.js";
-import { handleHelperToolCall } from "./index-helpers.js"; // Moved helper tool handlers to a separate file
+import { setupDocumentTools } from "./document-operations.js";
+import { setupSchemaTools } from "./schema-operations.js";
+import { setupHelperTools } from "./helper-tools.js";
 
 import { validateApiCredentials } from './auth.js';
 
@@ -27,115 +23,47 @@ async function main() {
     console.error("API credentials validation successful.");
   }
 
-  const server = new Server(
-    {
-      name: "frappe-mcp-server",
-      version: "0.2.13",
-    },
-    {
-      capabilities: {
-        resources: {},
-        tools: {},
-      },
-    }
-  );
+  const server = new McpServer({
+    name: "frappe-mcp-server",
+    version: "0.2.16",
+  });
 
   setupSchemaTools(server);
   setupDocumentTools(server);
+  setupHelperTools(server);
 
+  // Register ping tool using modern API
+  server.tool(
+    "ping",
+    "A simple tool to check if the server is responding.",
+    {},
+    async () => ({
+      content: [{ type: "text", text: "pong" }]
+    })
+  );
 
-  // Centralized tool registration
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const tools = [
-      {
-        name: "call_method",
-        description: "Execute a whitelisted Frappe method",
-        inputSchema: {
-          type: "object",
-          properties: {
-            method: { type: "string", description: "Method name to call (whitelisted)" },
-            params: {
-              type: "object",
-              description: "Parameters to pass to the method (optional)",
-              additionalProperties: true
-            },
-          },
-          required: ["method"],
-        },
-      },
-      ...DOCUMENT_TOOLS,
-      ...SCHEMA_TOOLS,
-      ...HELPER_TOOLS,
-      {
-        name: "ping",
-        description: "A simple tool to check if the server is responding.",
-        inputSchema: { type: "object", properties: {} }, // No input needed
-      },
-    ];
-    return { tools };
-  });
-
-  // Centralized tool call handling
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name } = request.params;
-
-    try {
-      console.error(`Received tool call for: ${name}`);
-
-      if (name === "call_method") {
-        console.error(`Routing to call_method handler: ${name}`);
-        return await handleCallMethodToolCall(request);
-      }
-
-      if (DOCUMENT_TOOLS.find(tool => tool.name === name)) {
-        console.error(`Routing to document handler: ${name}`);
-        return await handleDocumentToolCall(request);
-      }
-
-      if (SCHEMA_TOOLS.find((tool: { name: string }) => tool.name === name)) {
-        console.error(`Routing to schema handler: ${name}`);
-        return await handleSchemaToolCall(request);
-      }
-
-      if (HELPER_TOOLS.find((tool: { name: string }) => tool.name === name)) {
-        console.error(`Routing to helper handler: ${name}`);
-        return await handleHelperToolCall(request);
-      }
-
-
-      if (name === "ping") {
-        console.error(`Routing to ping handler: ${name}`);
-        return {
-          content: [{ type: "text", text: "pong" }],
-          isError: false,
-        };
-      }
-
-      console.error(`No handler found for tool: ${name}`);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Unknown tool: ${name}`,
-          },
-        ],
-        isError: true,
+  // Register call_method tool using modern API
+  server.tool(
+    "call_method",
+    "Execute a whitelisted Frappe method",
+    {
+      method: z.string().describe("Method name to call (whitelisted)"),
+      params: z.object({}).optional().describe("Parameters to pass to the method (optional)")
+    },
+    async (args) => {
+      console.error(`Received call_method tool call`);
+      // Create a mock request object for backward compatibility
+      const mockRequest = {
+        params: {
+          name: "call_method",
+          arguments: args
+        }
       };
-    } catch (error) {
-      console.error(`Error handling tool ${name}:`, error);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error handling tool ${name}: ${(error as Error).message}`,
-          },
-        ],
-        isError: true,
-      };
+      return await handleCallMethodToolCall(mockRequest);
     }
-  });
+  );
 
-  server.onerror = (error) => console.error("[MCP Error]", error);
+  // Modern McpServer handles errors automatically
 
   process.on("SIGINT", async () => {
     console.error("Shutting down Frappe MCP server...");

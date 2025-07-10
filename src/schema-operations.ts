@@ -1,12 +1,5 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import {
-  ListResourceTemplatesRequestSchema,
-  ReadResourceRequestSchema,
-  ErrorCode,
-  McpError,
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 import {
   getDocTypeSchema,
   getFieldOptions,
@@ -456,7 +449,7 @@ export async function handleSchemaToolCall(request: any): Promise<any> {
   }
 }
 
-export function setupSchemaTools(server: Server): void {
+export function setupSchemaTools(server: McpServer): void {
   // Initialize static hints
   console.error("Initializing static hints...");
   initializeStaticHints().then(() => {
@@ -473,131 +466,108 @@ export function setupSchemaTools(server: Server): void {
     console.error("Error initializing app introspection:", error);
   });
 
-  // We no longer register tools here, only resources
-  // Tools are now registered in the central handler in index.ts
-
-  // Register schema resources
-  server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
-    resourceTemplates: [
-      {
-        uriTemplate: "schema://{doctype}",
-        name: "DocType Schema",
-        mimeType: "application/json",
-        description:
-          "Schema information for a DocType including field definitions and validations",
-      },
-      {
-        uriTemplate: "schema://{doctype}/{fieldname}/options",
-        name: "Field Options",
-        mimeType: "application/json",
-        description: "Available options for a Link or Select field",
-      },
-      {
-        uriTemplate: "schema://modules",
-        name: "Module List",
-        mimeType: "application/json",
-        description: "List of all modules in the system",
-      },
-      {
-        uriTemplate: "schema://doctypes",
-        name: "DocType List",
-        mimeType: "application/json",
-        description: "List of all DocTypes in the system",
-      },
-    ],
-  }));
-
-  // Handle schema resource requests
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    const { uri } = request.params;
-
-    try {
-      // Handle DocType schema resource
-      const schemaMatch = uri.match(/^schema:\/\/([^\/]+)$/);
-      if (schemaMatch) {
-        const doctype = decodeURIComponent(schemaMatch[1]);
-
-        // Special case for modules list
-        if (doctype === "modules") {
-          const modules = await getAllModules();
-          return {
-            contents: [
-              {
-                uri,
-                mimeType: "application/json",
-                text: JSON.stringify(modules, null, 2),
-              },
-            ],
-          };
-        }
-
-        // Special case for doctypes list
-        if (doctype === "doctypes") {
-          const doctypes = await getAllDocTypes();
-          return {
-            contents: [
-              {
-                uri,
-                mimeType: "application/json",
-                text: JSON.stringify(doctypes, null, 2),
-              },
-            ],
-          };
-        }
-
-        // Regular DocType schema
+  // Register get_doctype_schema tool
+  server.tool(
+    "get_doctype_schema",
+    "Get the complete schema for a DocType including field definitions, validations, and linked DocTypes. Use this to understand the structure of a DocType before creating or updating documents.",
+    {
+      doctype: z.string().describe("DocType name")
+    },
+    async ({ doctype }) => {
+      try {
         const schema = await getDocTypeSchema(doctype);
         return {
-          contents: [
+          content: [
             {
-              uri,
-              mimeType: "application/json",
+              type: "text",
               text: JSON.stringify(schema, null, 2),
             },
           ],
         };
+      } catch (error) {
+        return formatErrorResponse(error, "get_doctype_schema");
       }
+    }
+  );
 
-      // Handle field options resource
-      const optionsMatch = uri.match(/^schema:\/\/([^\/]+)\/([^\/]+)\/options$/);
-      if (optionsMatch) {
-        const doctype = decodeURIComponent(optionsMatch[1]);
-        const fieldname = decodeURIComponent(optionsMatch[2]);
-        const options = await getFieldOptions(doctype, fieldname);
-
+  // Register get_field_options tool
+  server.tool(
+    "get_field_options",
+    "Get available options for a Link or Select field. For Link fields, returns documents from the linked DocType. For Select fields, returns the predefined options.",
+    {
+      doctype: z.string().describe("DocType name"),
+      fieldname: z.string().describe("Field name"),
+      filters: z.object({}).optional().describe("Filters to apply to the linked DocType (optional, for Link fields only)")
+    },
+    async ({ doctype, fieldname, filters }) => {
+      try {
+        const options = await getFieldOptions(doctype, fieldname, filters);
         return {
-          contents: [
+          content: [
             {
-              uri,
-              mimeType: "application/json",
+              type: "text",
               text: JSON.stringify(options, null, 2),
             },
           ],
         };
+      } catch (error) {
+        return formatErrorResponse(error, "get_field_options");
       }
-
-      throw new McpError(
-        ErrorCode.InvalidRequest,
-        `Unknown resource URI: ${uri}`
-      );
-    } catch (error) {
-      console.error(`Error handling resource request for ${uri}:`, error);
-
-      if (error instanceof McpError) {
-        throw error;
-      }
-
-      if (error instanceof FrappeApiError) {
-        throw new McpError(
-          ErrorCode.InternalError,
-          error.message
-        );
-      }
-
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Error processing resource request: ${(error as Error).message}`
-      );
     }
-  });
+  );
+
+  // Register get_frappe_usage_info tool
+  server.tool(
+    "get_frappe_usage_info",
+    "Get combined information about a DocType or workflow, including schema metadata and usage guidance from static hints.",
+    {
+      doctype: z.string().optional().describe("DocType name (optional if workflow is provided)"),
+      workflow: z.string().optional().describe("Workflow name (optional if doctype is provided)")
+    },
+    async ({ doctype, workflow }) => {
+      try {
+        let result = {};
+        
+        if (doctype) {
+          const schema = await getDocTypeSchema(doctype);
+          const hints = await getDocTypeHints(doctype);
+          const workflows = await findWorkflowsForDocType(doctype);
+          const appName = await getAppForDocType(doctype);
+          const appInstructions = appName ? getAppUsageInstructions(appName) : null;
+          const docTypeInstructions = getDocTypeUsageInstructions(doctype);
+          
+          result = {
+            doctype,
+            schema,
+            hints,
+            workflows,
+            app: appName,
+            appInstructions,
+            docTypeInstructions
+          };
+        } else if (workflow) {
+          const workflowHints = await getWorkflowHints(workflow);
+          result = {
+            workflow,
+            hints: workflowHints
+          };
+        }
+        
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, "get_frappe_usage_info");
+      }
+    }
+  );
+
+  // TODO: Register schema resources with new McpServer API
+  // The new McpServer API handles resources differently
+  // For now, we'll focus on tools and add resources later
 }

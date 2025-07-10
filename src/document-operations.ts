@@ -1,8 +1,5 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 import { callMethod } from "./frappe-api.js";
 import {
   createDocument,
@@ -604,12 +601,172 @@ export async function handleDocumentToolCall(request: any): Promise<any> {
   }
 }
 
-export function setupDocumentTools(server: Server): void {
-  // We no longer register tools here
-  // Tools are now registered in the central handler in index.ts
+export function setupDocumentTools(server: McpServer): void {
+  // Register create_document tool
+  server.tool(
+    "create_document",
+    "Create a new document in Frappe",
+    {
+      doctype: z.string().describe("DocType name"),
+      values: z.object({}).describe("Document field values. Required fields must be included. For Link fields, provide the exact document name. For Table fields, provide an array of row objects.")
+    },
+    async ({ doctype, values }) => {
+      try {
+        const result = await createDocument(doctype, values);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Document created successfully. Name: ${result.name}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, "create_document");
+      }
+    }
+  );
 
-  // This function is kept as a no-op to prevent import errors
-  console.error("Document tools are now registered in the central handler in index.ts");
+  // Register get_document tool
+  server.tool(
+    "get_document",
+    "Retrieve a document from Frappe",
+    {
+      doctype: z.string().describe("DocType name"),
+      name: z.string().describe("Document name (case-sensitive)"),
+      fields: z.array(z.string()).optional().describe("Fields to retrieve (optional). If not specified, all fields will be returned.")
+    },
+    async ({ doctype, name, fields }) => {
+      try {
+        const result = await getDocument(doctype, name, fields);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, "get_document");
+      }
+    }
+  );
+
+  // Register update_document tool
+  server.tool(
+    "update_document",
+    "Update an existing document in Frappe",
+    {
+      doctype: z.string().describe("DocType name"),
+      name: z.string().describe("Document name (case-sensitive)"),
+      values: z.object({}).describe("Document field values to update. Only include fields that need to be updated. For Table fields, provide the entire table data including row IDs for existing rows.")
+    },
+    async ({ doctype, name, values }) => {
+      try {
+        const result = await updateDocument(doctype, name, values);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Document updated successfully. Name: ${result.name}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, "update_document");
+      }
+    }
+  );
+
+  // Register delete_document tool
+  server.tool(
+    "delete_document",
+    "Delete a document from Frappe",
+    {
+      doctype: z.string().describe("DocType name"),
+      name: z.string().describe("Document name (case-sensitive)")
+    },
+    async ({ doctype, name }) => {
+      try {
+        await deleteDocument(doctype, name);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Document deleted successfully. DocType: ${doctype}, Name: ${name}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, "delete_document");
+      }
+    }
+  );
+
+  // Register list_documents tool
+  server.tool(
+    "list_documents",
+    "List documents from Frappe with filters",
+    {
+      doctype: z.string().describe("DocType name"),
+      filters: z.object({}).optional().describe("Filters to apply (optional). Simple format: {\"field\": \"value\"} or with operators: {\"field\": [\">\", \"value\"]}. Available operators: =, !=, <, >, <=, >=, like, not like, in, not in, is, is not, between."),
+      fields: z.array(z.string()).optional().describe("Fields to retrieve (optional). For better performance, specify only the fields you need."),
+      limit: z.number().optional().describe("Maximum number of documents to retrieve (optional). Use with limit_start for pagination."),
+      limit_start: z.number().optional().describe("Starting offset for pagination (optional). Use with limit for pagination."),
+      order_by: z.string().optional().describe("Field to order by (optional). Format: \"field_name asc\" or \"field_name desc\".")
+    },
+    async ({ doctype, filters, fields, limit, limit_start, order_by }) => {
+      try {
+        const result = await listDocuments(doctype, filters, fields, limit, order_by, limit_start);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, "list_documents");
+      }
+    }
+  );
+
+  // Register reconcile_bank_transaction_with_vouchers tool
+  server.tool(
+    "reconcile_bank_transaction_with_vouchers",
+    "Reconciles a Bank Transaction document with specified vouchers by calling a specific Frappe method.",
+    {
+      bank_transaction_name: z.string().describe("The ID (name) of the Bank Transaction document to reconcile."),
+      vouchers: z.array(z.object({
+        payment_doctype: z.string().describe("The DocType of the payment voucher (e.g., Payment Entry, Journal Entry)."),
+        payment_name: z.string().describe("The ID (name) of the payment voucher document."),
+        amount: z.number().describe("The amount from the voucher to reconcile.")
+      })).describe("An array of voucher objects to reconcile against the bank transaction.")
+    },
+    async ({ bank_transaction_name, vouchers }) => {
+      try {
+        const result = await callMethod(
+          "erpnext.accounts.doctype.bank_transaction.bank_transaction.reconcile_bank_transaction_with_vouchers",
+          {
+            bank_transaction_name,
+            vouchers
+          }
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Bank transaction reconciled successfully: ${JSON.stringify(result, null, 2)}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return formatErrorResponse(error, "reconcile_bank_transaction_with_vouchers");
+      }
+    }
+  );
 }
 
 /**
