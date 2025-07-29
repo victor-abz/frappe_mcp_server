@@ -608,7 +608,7 @@ export function setupDocumentTools(server: McpServer): void {
     "Create a new document in Frappe",
     {
       doctype: z.string().describe("DocType name"),
-      values: z.object({}).describe("Document field values. Required fields must be included. For Link fields, provide the exact document name. For Table fields, provide an array of row objects.")
+      values: z.object({}).passthrough().describe("Document field values. Required fields must be included. For Link fields, provide the exact document name. For Table fields, provide an array of row objects.")
     },
     async ({ doctype, values }) => {
       try {
@@ -660,7 +660,7 @@ export function setupDocumentTools(server: McpServer): void {
     {
       doctype: z.string().describe("DocType name"),
       name: z.string().describe("Document name (case-sensitive)"),
-      values: z.object({}).describe("Document field values to update. Only include fields that need to be updated. For Table fields, provide the entire table data including row IDs for existing rows.")
+      values: z.object({}).passthrough().describe("Document field values to update. Only include fields that need to be updated. For Table fields, provide the entire table data including row IDs for existing rows.")
     },
     async ({ doctype, name, values }) => {
       try {

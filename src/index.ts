@@ -60,6 +60,16 @@ async function main() {
   setupDocumentTools(server);
   setupHelperTools(server);
 
+  // Register version tool
+  server.tool(
+    "version",
+    "Get version information for the Frappe MCP server",
+    {},
+    async () => ({
+      content: [{ type: "text", text: `Frappe MCP Server version ${getVersion()}` }]
+    })
+  );
+
   // Register ping tool using modern API
   server.tool(
     "ping",
