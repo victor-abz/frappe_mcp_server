@@ -296,6 +296,7 @@ export async function listDocuments(
       limit: limit
     };
 
+
     try {
       const response = await frappe.db().getDocList(doctype, optionsForGetDocList as any); // Cast to any to resolve complex type issue for now, focusing on runtime
 
