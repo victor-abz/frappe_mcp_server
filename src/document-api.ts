@@ -327,7 +327,12 @@ export async function callMethod(
   try {
     if (!method) throw new Error("Method name is required");
 
+    console.error(`[callMethod] About to call Frappe method: ${method}`);
+    console.error(`[callMethod] Parameters:`, JSON.stringify(params, null, 2));
+    
     const response = await frappe.call().post(method, params);
+    
+    console.error(`[callMethod] Response received:`, JSON.stringify(response, null, 2));
 
     if (!response) {
       throw new Error(`Invalid response format for method ${method}`);
@@ -335,6 +340,20 @@ export async function callMethod(
 
     return response;
   } catch (error) {
+    console.error(`[callMethod] Error caught:`, error);
+    console.error(`[callMethod] Error type:`, typeof error);
+    console.error(`[callMethod] Error instanceof Error:`, error instanceof Error);
+    console.error(`[callMethod] Error message:`, (error as any).message);
+    console.error(`[callMethod] Error stack:`, (error as any).stack);
+    
+    if ((error as any).isAxiosError) {
+      console.error(`[callMethod] Axios error details:`);
+      console.error(`[callMethod] - response status:`, (error as any).response?.status);
+      console.error(`[callMethod] - response data:`, JSON.stringify((error as any).response?.data, null, 2));
+      console.error(`[callMethod] - request url:`, (error as any).config?.url);
+      console.error(`[callMethod] - request method:`, (error as any).config?.method);
+    }
+    
     handleApiError(error, `call_method(${method})`);
   }
 }

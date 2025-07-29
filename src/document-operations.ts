@@ -806,7 +806,10 @@ export async function handleCallMethodToolCall(request: any): Promise<any> {
       };
     }
 
+    console.error(`About to call method: ${method} with params:`, JSON.stringify(params, null, 2));
     const result = await callMethod(method, params);
+    console.error(`Method call successful, result:`, JSON.stringify(result, null, 2));
+    
     return {
       content: [
         {
@@ -816,6 +819,17 @@ export async function handleCallMethodToolCall(request: any): Promise<any> {
       ],
     };
   } catch (error) {
-    return formatErrorResponse(error, `call_method(${name})`);
+    console.error(`Error in handleCallMethodToolCall:`, error);
+    console.error(`Error details - type:`, typeof error);
+    console.error(`Error details - constructor:`, (error as any).constructor?.name);
+    console.error(`Error details - message:`, (error as any).message);
+    console.error(`Error details - stack:`, (error as any).stack);
+    
+    if (error instanceof Error) {
+      console.error(`Error properties:`, Object.keys(error));
+      console.error(`Error toString:`, error.toString());
+    }
+    
+    return formatErrorResponse(error, `call_method(${args.method || 'unknown'})`);
   }
 }
