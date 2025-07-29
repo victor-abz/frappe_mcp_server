@@ -9,3 +9,4 @@ RECONCILIATION_STATUS.md
 CLAUDE.md
 test-config.env
 .mcp.json
+.claude/
