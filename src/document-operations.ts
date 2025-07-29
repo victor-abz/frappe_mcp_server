@@ -718,7 +718,9 @@ export function setupDocumentTools(server: McpServer): void {
     },
     async ({ doctype, filters, fields, limit, limit_start, order_by }) => {
       try {
-        const result = await listDocuments(doctype, filters, fields, limit, order_by, limit_start);
+        // Format filters if provided  
+        const formattedFilters = filters ? formatFilters(filters) : undefined;
+        const result = await listDocuments(doctype, formattedFilters, fields, limit, order_by, limit_start);
         return {
           content: [
             {

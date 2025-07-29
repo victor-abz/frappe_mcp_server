@@ -1,4 +1,33 @@
 #!/usr/bin/env node
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+function getVersion(): string {
+  try {
+    const packageJsonPath = join(__dirname, '..', 'package.json');
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+    return packageJson.version;
+  } catch (error) {
+    return '0.2.16'; // fallback version
+  }
+}
+
+function checkVersionFlag(): boolean {
+  const args = process.argv.slice(2);
+  return args.includes('--version') || args.includes('-v');
+}
+
+// Handle version flag before any other imports
+if (checkVersionFlag()) {
+  console.log(getVersion());
+  process.exit(0);
+}
+
+// Now import everything else
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -6,7 +35,6 @@ import { handleCallMethodToolCall } from "./document-operations.js";
 import { setupDocumentTools } from "./document-operations.js";
 import { setupSchemaTools } from "./schema-operations.js";
 import { setupHelperTools } from "./helper-tools.js";
-
 import { validateApiCredentials } from './auth.js';
 
 async function main() {
@@ -25,7 +53,7 @@ async function main() {
 
   const server = new McpServer({
     name: "frappe-mcp-server",
-    version: "0.2.16",
+    version: getVersion(),
   });
 
   setupSchemaTools(server);
