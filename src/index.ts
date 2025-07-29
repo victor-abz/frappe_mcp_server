@@ -35,26 +35,6 @@ import { handleCallMethodToolCall } from "./document-operations.js";
 import { setupDocumentTools } from "./document-operations.js";
 import { setupSchemaTools } from "./schema-operations.js";
 import { setupHelperTools } from "./helper-tools.js";
-
-function checkVersionFlag(): boolean {
-  const args = process.argv.slice(2);
-  return args.includes('--version') || args.includes('-v');
-}
-
-// Handle version flag before any other imports
-if (checkVersionFlag()) {
-  console.log(getVersion());
-  process.exit(0);
-}
-
-// Now import everything else
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
-import { handleCallMethodToolCall } from "./document-operations.js";
-import { setupDocumentTools } from "./document-operations.js";
-import { setupSchemaTools } from "./schema-operations.js";
-import { setupHelperTools } from "./helper-tools.js";
 import { validateApiCredentials } from './auth.js';
 
 async function main() {
