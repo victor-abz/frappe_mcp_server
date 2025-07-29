@@ -5,7 +5,7 @@
   "main": "build/index.js",
   "type": "module",
   "scripts": {
-    "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\" && node -e \"require('fs').chmodSync('build/http-server.js', '755')\" && node -e \"require('fs').chmodSync('build/streamable-http-server.js', '755')\"",
+    "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\" && node -e \"require('fs').chmodSync('build/http-server.js', '755')\" && node -e \"require('fs').chmodSync('build/streamable-http-server.js', '755')\" && node -e \"require('fs').chmodSync('build/agents/mcp-server-publisher.js', '755')\"",
     "start": "node build/index.js",
     "start-http": "node build/http-server.js --http",
     "start-streamable": "node build/streamable-http-server.js",
@@ -18,10 +18,17 @@
     "test-real": "node test-with-real-frappe.js",
     "test-http": "node test-http-server.js",
     "fixpkg": "npm pkg fix",
-    "publish": "npm publish --access public"
+    "publish": "npm publish --access public",
+    "publisher": "node build/agents/mcp-server-publisher.js",
+    "publish-patch": "node build/agents/mcp-server-publisher.js /publish-patch",
+    "publish-minor": "node build/agents/mcp-server-publisher.js /publish-minor",
+    "publish-major": "node build/agents/mcp-server-publisher.js /publish-major",
+    "check-version": "node build/agents/mcp-server-publisher.js /check-version",
+    "suggest-version": "node build/agents/mcp-server-publisher.js /suggest-version"
   },
   "bin": {
-    "frappe-mcp-server": "build/index.js"
+    "frappe-mcp-server": "build/index.js",
+    "mcp-server-publisher": "build/agents/mcp-server-publisher.js"
   },
   "keywords": [
     "frappe",
@@ -34,7 +41,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.6.1",
+    "@modelcontextprotocol/sdk": "^1.17.0",
     "axios": "^1.8.2",
     "cors": "^2.8.5",
     "express": "^5.1.0",
