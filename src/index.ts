@@ -35,6 +35,7 @@ import { handleCallMethodToolCall } from "./document-operations.js";
 import { setupDocumentTools } from "./document-operations.js";
 import { setupSchemaTools } from "./schema-operations.js";
 import { setupHelperTools } from "./helper-tools.js";
+import { setupReportTools } from "./report-operations.js";
 import { validateApiCredentials } from './auth.js';
 
 async function main() {
@@ -59,6 +60,7 @@ async function main() {
   setupSchemaTools(server);
   setupDocumentTools(server);
   setupHelperTools(server);
+  setupReportTools(server);
 
   // Register version tool
   server.tool(
