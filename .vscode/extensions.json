@@ -1,0 +1,22 @@
+{
+  "recommendations": [
+    // Essential for TypeScript development
+    "ms-vscode.vscode-typescript-next",
+    
+    // Vitest testing support
+    "zixuanchen.vitest-explorer",
+    "vitest.explorer",
+    
+    // Git integration
+    "eamodio.gitlens",
+    
+    // Code formatting and linting
+    "esbenp.prettier-vscode",
+    "ms-vscode.vscode-eslint",
+    
+    // Additional TypeScript tools
+    "usernamehw.errorlens",
+    "christian-kohler.path-intellisense",
+    "ms-vscode.vscode-json"
+  ]
+}

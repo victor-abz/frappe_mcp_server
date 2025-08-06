@@ -19,6 +19,8 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
+    "test:report": "vitest run --reporter=verbose --reporter=json --reporter=html",
+    "test:debug": "vitest --run --reporter=verbose --no-coverage",
     "fixpkg": "npm pkg fix",
     "publish": "npm publish --access public",
     "publisher": "node build/agents/mcp-server-publisher.js",

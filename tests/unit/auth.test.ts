@@ -19,15 +19,16 @@ describe('Authentication (Real Frappe API)', () => {
     expect(frappeApiSecret).toBeTruthy();
   });
 
-  test('should validate real Frappe API credentials', async () => {
+  test('should validate real Frappe API credentials', () => {
     const result = validateApiCredentials();
     expect(result.valid).toBe(true);
-    expect(result.error).toBeNull();
+    expect(result.message).toBe("API credentials validation successful.");
   });
 
   test('should check Frappe API health with real instance', async () => {
     const result = await checkFrappeApiHealth();
     expect(result.healthy).toBe(true);
-    expect(result.error).toBeNull();
+    expect(result.tokenAuth).toBe(true);
+    expect(result.message).toContain("healthy");
   });
 });

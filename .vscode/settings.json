@@ -1,0 +1,27 @@
+{
+  // TypeScript settings
+  "typescript.preferences.includePackageJsonAutoImports": "auto",
+  "typescript.suggest.autoImports": true,
+  
+  // Testing settings
+  "vitest.enable": true,
+  "vitest.commandLine": "npm run test",
+  "testing.automaticallyOpenPeekView": "never",
+  "testing.openTesting": "neverOpen",
+  
+  // File associations
+  "files.associations": {
+    "*.test.ts": "typescript"
+  },
+  
+  // Exclude test results from file explorer
+  "files.exclude": {
+    "**/test-results": true,
+    "**/coverage": true
+  },
+  
+  // Editor settings for tests
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "explicit"
+  }
+}
