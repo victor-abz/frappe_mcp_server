@@ -7,7 +7,11 @@ export default defineConfig({
     timeout: 30000, // 30 seconds for real API calls
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.test.ts'],
-    reporters: ['verbose', 'json', 'html'],
+    reporters: [
+      ['default', { summary: false, verbose: false }],
+      'json', 
+      'html'
+    ],
     outputFile: {
       json: './test-results/results.json',
       html: './test-results/index.html',
@@ -29,7 +33,7 @@ export default defineConfig({
     },
     // Better error reporting
     bail: 1,
-    logHeapUsage: true,
-    printConsoleTrace: true,
+    logHeapUsage: false,
+    printConsoleTrace: false,
   },
 });

@@ -235,6 +235,7 @@ export async function getNamingSeriesInfo(doctype: string): Promise<any> {
     
     // Return naming information from the schema
     return {
+      doctype: doctype,
       autoname: schema.autoname,
       namingSeriesField: schema.fields.find((f: any) => f.fieldname === "naming_series"),
       isAutoNamed: !!schema.autoname && schema.autoname !== "prompt",
