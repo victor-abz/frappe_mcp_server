@@ -23,5 +23,6 @@
   // Editor settings for tests
   "editor.codeActionsOnSave": {
     "source.organizeImports": "explicit"
-  }
+  },
+  "testing.automaticallyOpenTestResults": "neverOpen"
 }
